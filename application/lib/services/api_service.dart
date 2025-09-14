@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/api_response.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
@@ -22,16 +21,44 @@ class ApiService {
   Map<String, String> get authHeaders => {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'Authorization': 'Token ${_token ?? ''}',
+    if (_jwtToken != null) 'Authorization': 'Bearer $_jwtToken',
   };
 
-  String? _token;
+  String? _jwtToken;
+
+  // Set JWT token for authentication
+  void setJWTToken(String token) {
+    _jwtToken = token;
+  }
+
+  // Clear authentication token
+  void clearToken() {
+    _jwtToken = null;
+  }
+
+  // Test backend connection
+  Future<Map<String, dynamic>> testConnection() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/health-check/'),
+        headers: headers,
+      ).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {'success': true, 'message': 'Connection successful'};
+      } else {
+        return {'success': false, 'message': 'Connection failed'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error: $e'};
+    }
+  }
 
   // Initialize token from storage and test connection
   Future<ApiResponse<String>> init() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _token = prefs.getString('auth_token');
+      // JWT tokens are now managed by SupabaseService, not stored locally
+      // Just test the connection
       
       // Simple connection test
       try {
@@ -65,18 +92,16 @@ class ApiService {
     }
   }
 
-  // Save token to storage
+  // JWT tokens are now managed by Supabase, these methods are kept for compatibility
   Future<void> _saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', token);
-    _token = token;
+    // JWT tokens are managed by Supabase - no local storage needed
+    setJWTToken(token);
   }
 
   // Remove token from storage
   Future<void> _removeToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
-    _token = null;
+    // JWT tokens are managed by Supabase - just clear local reference
+    clearToken();
   }
 
   // Helper method to handle HTTP requests with proper error handling
@@ -168,7 +193,7 @@ class ApiService {
   
   // Get current user profile
   Future<ApiResponse<Map<String, dynamic>>> getCurrentUser() async {
-    if (_token == null) {
+    if (_jwtToken == null) {
       return ApiResponse.error('Not authenticated', errorType: 'auth');
     }
     
@@ -582,5 +607,5 @@ class ApiService {
   }
 
   // Check if user is authenticated
-  bool get isAuthenticated => _token != null && _token!.isNotEmpty;
+  bool get isAuthenticated => _jwtToken != null && _jwtToken!.isNotEmpty;
 }
