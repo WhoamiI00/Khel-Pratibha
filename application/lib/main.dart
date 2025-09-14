@@ -18,8 +18,14 @@ import 'screens/connection_test_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Supabase
-  await SupabaseService.initialize();
+  try {
+    // Initialize Supabase
+    await SupabaseService.initialize();
+    print('✅ Supabase initialization completed');
+  } catch (e) {
+    print('❌ Supabase initialization failed: $e');
+    // Continue anyway to see the app
+  }
   
   runApp(const KhelPratibhaApp());
 }

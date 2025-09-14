@@ -6,18 +6,26 @@ class SupabaseService {
   
   SupabaseService._();
 
-  // Supabase configuration - replace with your actual values
-  static const String supabaseUrl = 'https://aaeduwgqwsrfclvfhkmk.supabase.co';
-  static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhZWR1d2dxd3NyZmNsdmZoa21rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQwMzM0ODcsImV4cCI6MjA0OTYwOTQ4N30.d7gXJJ0KUYEfCdEQXIDlI7mZFAfaJPE8d5bgwX5bKJY';
+  // Supabase configuration - using correct values from backend .env
+  static const String supabaseUrl = 'https://pxtsrcoyesqbarlzmqmt.supabase.co';
+  static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4dHNyY295ZXNxYmFybHptcW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwNDk5OTAsImV4cCI6MjA3MjYyNTk5MH0.hx_1FyOiKDJejonredZCAfY08b-qbKkZJnAAMpI7Tqg';
 
   SupabaseClient get client => Supabase.instance.client;
 
   // Initialize Supabase
   static Future<void> initialize() async {
-    await Supabase.initialize(
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-    );
+    try {
+      await Supabase.initialize(
+        url: supabaseUrl,
+        anonKey: supabaseAnonKey,
+        debug: true, // Enable debug mode
+      );
+      print('Supabase initialized successfully');
+      print('URL: $supabaseUrl');
+    } catch (e) {
+      print('Supabase initialization error: $e');
+      rethrow;
+    }
   }
 
   // Get current user
@@ -38,18 +46,23 @@ class SupabaseService {
     required String password,
   }) async {
     try {
+      print('Attempting sign in for: $email');
       final response = await client.auth.signInWithPassword(
         email: email,
         password: password,
       );
       
+      print('Auth response: ${response.user?.id}');
+      
       if (response.user != null) {
         print('Sign in successful for user: ${response.user!.email}');
+      } else {
+        print('Sign in failed: No user returned');
       }
       
       return response;
     } catch (e) {
-      print('Sign in error: $e');
+      print('Sign in error details: $e');
       rethrow;
     }
   }
