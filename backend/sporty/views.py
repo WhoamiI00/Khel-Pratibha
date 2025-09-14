@@ -1,30 +1,37 @@
 # views.py
-from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action
+from rest_framework import viewsets, status
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import AllowAny
 from django.core.files.storage import default_storage
-from django.db.models import Q, Avg, Count, Max
+from django.db.models import Q, Avg, Count, Max, Min
 from django.utils import timezone
+from django.http import JsonResponse
+from django.shortcuts import render
 from datetime import datetime, timedelta
 import uuid
 import json
-
-from sympy import Min
+import sys
 
 from .models import *
 from .serializers import *
+from .middleware import supabase_auth_required, get_current_user_profile
 
 class AthleteProfileViewSet(viewsets.ModelViewSet):
     queryset = AthleteProfile.objects.all()
     serializer_class = AthleteProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
+        # Check if user is authenticated (handled by middleware)
+        if not getattr(self.request, 'is_authenticated', False):
+            return AthleteProfile.objects.none()
+        
         # Athletes can only see their own profile, SAI officials see all
-        if hasattr(self.request.user, 'is_sai_official') and self.request.user.is_sai_official:
+        user_role = getattr(self.request, 'user_role', 'authenticated')
+        if user_role == 'sai_official':
             return AthleteProfile.objects.all()
-        return AthleteProfile.objects.filter(auth_user_id=self.request.user.id)
+        return AthleteProfile.objects.filter(auth_user_id=self.request.user_id)
     
     @action(detail=True, methods=['get'])
     def talent_summary(self, request, pk=None):
@@ -36,9 +43,15 @@ class AthleteProfileViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def register_athlete(self, request):
         """Register new athlete with SAI platform"""
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            
         serializer = AthleteProfileSerializer(data=request.data)
         if serializer.is_valid():
-            athlete = serializer.save(auth_user_id=request.user.id)
+            athlete = serializer.save(
+                auth_user_id=request.user_id,
+                email=request.user_email
+            )
             
             # Create initial assessment session
             session = AssessmentSession.objects.create(
@@ -96,16 +109,24 @@ class AssessmentSessionViewSet(viewsets.ModelViewSet):
     serializer_class = AssessmentSessionSerializer
     
     def get_queryset(self):
+        # Check authentication
+        if not getattr(self.request, 'is_authenticated', False):
+            return AssessmentSession.objects.none()
+            
         # Filter by athlete for regular users
-        if not hasattr(self.request.user, 'is_sai_official'):
-            return AssessmentSession.objects.filter(athlete__auth_user_id=self.request.user.id)
+        user_role = getattr(self.request, 'user_role', 'authenticated')
+        if user_role != 'sai_official':
+            return AssessmentSession.objects.filter(athlete__auth_user_id=self.request.user_id)
         return AssessmentSession.objects.all()
     
     @action(detail=False, methods=['post'])
     def start_assessment(self, request):
         """Start a new assessment session"""
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            
         try:
-            athlete = AthleteProfile.objects.get(auth_user_id=request.user.id)
+            athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
             
             # Check if there's an ongoing session
             ongoing_session = AssessmentSession.objects.filter(
@@ -226,8 +247,12 @@ class TestRecordingViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
     
     def get_queryset(self):
-        if not hasattr(self.request.user, 'is_sai_official'):
-            return TestRecording.objects.filter(athlete__auth_user_id=self.request.user.id)
+        if not getattr(self.request, 'is_authenticated', False):
+            return TestRecording.objects.none()
+            
+        user_role = getattr(self.request, 'user_role', 'authenticated')
+        if user_role != 'sai_official':
+            return TestRecording.objects.filter(athlete__auth_user_id=self.request.user_id)
         return TestRecording.objects.all()
     
     @action(detail=False, methods=['post'])
@@ -550,8 +575,11 @@ class LeaderboardViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def athlete_rankings(self, request):
         """Get specific athlete's rankings across all categories"""
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            
         try:
-            athlete = AthleteProfile.objects.get(auth_user_id=request.user.id)
+            athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
             rankings = Leaderboard.objects.filter(athlete=athlete)
             serializer = LeaderboardSerializer(rankings, many=True)
             
@@ -577,8 +605,11 @@ class BadgeViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def athlete_badges(self, request):
         """Get all badges earned by the current athlete"""
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            
         try:
-            athlete = AthleteProfile.objects.get(auth_user_id=request.user.id)
+            athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
             earned_badges = AthleteBadge.objects.filter(athlete=athlete).select_related('badge')
             serializer = AthleteBadgeSerializer(earned_badges, many=True)
             
@@ -600,22 +631,27 @@ class SAISubmissionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = SAISubmissionSerializer
     
     def get_queryset(self):
+        if not getattr(self.request, 'is_authenticated', False):
+            return SAISubmission.objects.none()
+            
         # SAI officials see all, athletes see only their own
-        if hasattr(self.request.user, 'is_sai_official') and self.request.user.is_sai_official:
+        user_role = getattr(self.request, 'user_role', 'authenticated')
+        if user_role == 'sai_official':
             return SAISubmission.objects.all()
-        return SAISubmission.objects.filter(athlete__auth_user_id=self.request.user.id)
+        return SAISubmission.objects.filter(athlete__auth_user_id=self.request.user_id)
     
     @action(detail=True, methods=['post'])
     def sai_review(self, request, pk=None):
         """SAI official review endpoint"""
-        if not hasattr(request.user, 'is_sai_official') or not request.user.is_sai_official:
+        user_role = getattr(self.request, 'user_role', 'authenticated')
+        if user_role != 'sai_official':
             return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         submission = self.get_object()
         
         # Update submission with SAI review
         submission.status = request.data.get('status', submission.status)
-        submission.sai_officer_id = request.user.username
+        submission.sai_officer_id = request.user_email
         submission.sai_comments = request.data.get('comments', '')
         submission.talent_category = request.data.get('talent_category')
         submission.recommended_sports = request.data.get('recommended_sports', [])
@@ -669,8 +705,11 @@ class StatsViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def athlete_stats(self, request):
         """Get statistics for current athlete"""
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            
         try:
-            athlete = AthleteProfile.objects.get(auth_user_id=request.user.id)
+            athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
             
             stats = {
                 'personal_best_scores': list(
@@ -903,104 +942,88 @@ def custom_500(request):
     }, status=500)
 
 
-from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
-from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework import status
-from django.db import transaction
-from .models import AthleteProfile
-from .serializers import AthleteProfileSerializer
-import uuid
-
+# Supabase Authentication Views
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def register_athlete(request):
-    """Register a new athlete"""
+def supabase_profile_sync(request):
+    """Sync user profile with Supabase authentication"""
     try:
-        with transaction.atomic():
-            # Create Django User
-            user = User.objects.create_user(
-                username=request.data.get('email'),
-                email=request.data.get('email'),
-                password=request.data.get('password'),
-                first_name=request.data.get('full_name', '').split(' '),
-                last_name=' '.join(request.data.get('full_name', '').split(' ')[1:])
-            )
-            
-            # Calculate age from date_of_birth
-            from datetime import datetime
-            date_of_birth = datetime.strptime(request.data.get('date_of_birth'), '%Y-%m-%d').date()
-            age = datetime.now().year - date_of_birth.year
-            
-            # Create AthleteProfile
-            athlete = AthleteProfile.objects.create(
-                auth_user_id=uuid.uuid4(),  # Generate UUID for Supabase compatibility
-                full_name=request.data.get('full_name'),
-                date_of_birth=date_of_birth,
-                age=age,
-                gender=request.data.get('gender'),
-                height=request.data.get('height'),
-                weight=request.data.get('weight'),
-                phone_number=request.data.get('phone_number'),
-                email=request.data.get('email'),
-                address=request.data.get('address'),
-                state=request.data.get('state'),
-                district=request.data.get('district'),
-                pincode=request.data.get('pincode'),
-                aadhaar_number=request.data.get('aadhaar_number'),
-                location_category='urban'  # Default, can be enhanced
-            )
-            
-            # Create token
-            token, created = Token.objects.get_or_create(user=user)
-            
+        from datetime import datetime
+        
+        # This endpoint is called after successful Supabase authentication
+        # to create or update athlete profile in Django
+        user_id = request.data.get('user_id')
+        user_email = request.data.get('email')
+        profile_data = request.data.get('profile', {})
+        
+        if not user_id or not user_email:
             return Response({
-                'token': token.key,
-                'athlete': AthleteProfileSerializer(athlete).data,
-                'message': 'Registration successful!'
-            }, status=status.HTTP_201_CREATED)
-            
+                'error': 'Missing required fields: user_id, email'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Parse date of birth
+        date_of_birth_str = profile_data.get('date_of_birth', '2000-01-01')
+        if isinstance(date_of_birth_str, str):
+            date_of_birth = datetime.strptime(date_of_birth_str, '%Y-%m-%d').date()
+        else:
+            date_of_birth = date_of_birth_str
+        
+        # Get or create athlete profile
+        athlete, created = AthleteProfile.objects.get_or_create(
+            auth_user_id=user_id,
+            defaults={
+                'email': user_email,
+                'full_name': profile_data.get('full_name', ''),
+                'phone_number': profile_data.get('phone_number', ''),
+                'date_of_birth': date_of_birth,
+                'gender': profile_data.get('gender', 'male'),
+                'height': profile_data.get('height', 0),
+                'weight': profile_data.get('weight', 0),
+                'address': profile_data.get('address', ''),
+                'state': profile_data.get('state', ''),
+                'district': profile_data.get('district', ''),
+                'pin_code': profile_data.get('pin_code', ''),
+                'aadhaar_number': profile_data.get('aadhaar_number') or str(user_id)[:12],  # Truncate to 12 chars
+                'location_category': profile_data.get('location_category', 'urban'),
+                'age': profile_data.get('age', 0)
+            }
+        )        # If athlete profile already exists but needs updating
+        if not created:
+            for field, value in profile_data.items():
+                if hasattr(athlete, field) and value:
+                    setattr(athlete, field, value)
+            athlete.save()
+        
+        return Response({
+            'athlete_id': athlete.id,
+            'message': 'Profile synced successfully' if not created else 'Profile created successfully',
+            'created': created,
+            'athlete': AthleteProfileSerializer(athlete).data
+        })
+        
     except Exception as e:
         return Response({
-            'message': f'Registration failed: {str(e)}'
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_athlete(request):
-    """Login athlete"""
-    email = request.data.get('email')
-    password = request.data.get('password')
-    
-    user = authenticate(username=email, password=password)
-    
-    if user:
-        try:
-            athlete = AthleteProfile.objects.get(email=email)
-            token, created = Token.objects.get_or_create(user=user)
-            
-            return Response({
-                'token': token.key,
-                'athlete': AthleteProfileSerializer(athlete).data,
-                'message': 'Login successful!'
-            })
-        except AthleteProfile.DoesNotExist:
-            return Response({
-                'message': 'Athlete profile not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-    else:
-        return Response({
-            'message': 'Invalid credentials'
-        }, status=status.HTTP_401_UNAUTHORIZED)
+            'error': f'Profile sync failed: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
-def health_check(request):
-    """Health check endpoint"""
-    return Response({
-        'status': 'healthy',
-        'message': 'Backend is running'
-    })
+def get_athlete_profile(request):
+    """Get athlete profile by Supabase user ID"""
+    user_id = request.GET.get('user_id')
+    
+    if not user_id:
+        return Response({
+            'error': 'user_id parameter required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        athlete = AthleteProfile.objects.get(auth_user_id=user_id)
+        return Response({
+            'athlete': AthleteProfileSerializer(athlete).data
+        })
+    except AthleteProfile.DoesNotExist:
+        return Response({
+            'error': 'Athlete profile not found',
+            'message': 'Please complete your profile setup'
+        }, status=status.HTTP_404_NOT_FOUND)

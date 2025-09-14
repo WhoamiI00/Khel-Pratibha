@@ -32,18 +32,16 @@ router.register(r'leaderboards', views.LeaderboardViewSet, basename='leaderboard
 router.register(r'badges', views.BadgeViewSet, basename='badges')
 router.register(r'sai-submissions', views.SAISubmissionViewSet, basename='sai-submissions')
 router.register(r'stats', views.StatsViewSet, basename='stats')
-from rest_framework.authtoken.views import obtain_auth_token
-
 urlpatterns = [
-    # Admin interface
+    # Admin interface  
     path('admin/', admin.site.urls),
-    path('api/auth/register/', views.register_athlete, name='register'),
-    path('api/auth/login/', views.login_athlete, name='login'),
+    
+    # Supabase Authentication endpoints
+    path('api/auth/profile-sync/', views.supabase_profile_sync, name='supabase-profile-sync'),
+    path('api/auth/profile/', views.get_athlete_profile, name='get-athlete-profile'),
+    
     # API endpoints
     path('api/v1/', include(router.urls)),
-    
-    # Authentication endpoints (Django REST Framework)
-    path('api/auth/', include('rest_framework.urls')),
     
     # Custom API endpoints
     path('api/v1/device/optimize/', views.optimize_for_device, name='optimize-device'),
