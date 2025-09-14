@@ -36,7 +36,12 @@ urlpatterns = [
     # Admin interface  
     path('admin/', admin.site.urls),
     
-    # Supabase Authentication endpoints
+    # Flutter → Django Authentication endpoints
+    path('api/auth/login/', views.login, name='login'),
+    path('api/auth/register/', views.register, name='register'),
+    path('api/auth/logout/', views.logout, name='logout'),
+    
+    # Supabase Authentication endpoints (compatibility)
     path('api/auth/profile-sync/', views.supabase_profile_sync, name='supabase-profile-sync'),
     path('api/auth/profile/', views.get_athlete_profile, name='get-athlete-profile'),
     

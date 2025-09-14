@@ -65,7 +65,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       email: _emailController.text.trim(),
       password: _passwordController.text,
       phoneNumber: _phoneController.text.trim(),
-      dateOfBirth: _selectedDate!,
+      dateOfBirth: _selectedDate!.toIso8601String().split('T')[0], // Convert DateTime to YYYY-MM-DD string
       gender: _selectedGender,
       height: double.parse(_heightController.text),
       weight: double.parse(_weightController.text),

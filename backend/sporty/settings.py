@@ -31,7 +31,8 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost', 
     '172.27.74.88',
-    '0.0.0.0',        # Allow all IPs (development only!)
+    '0.0.0.0',  
+          '10.136.205.117'      # Allow all IPs (development only!)
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -39,6 +40,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://172.27.74.88:8000",
     "http://0.0.0.0:8000",
+    "http://10.136.205.117:8000"
 ]
 
 # For development, you might want to allow all origins

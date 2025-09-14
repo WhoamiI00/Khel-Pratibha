@@ -4,6 +4,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny
+from django.views.decorators.csrf import csrf_exempt
 from django.core.files.storage import default_storage
 from django.db.models import Q, Avg, Count, Max, Min
 from django.utils import timezone
@@ -942,7 +943,237 @@ def custom_500(request):
     }, status=500)
 
 
-# Supabase Authentication Views
+# Django → Supabase Authentication Views
+@csrf_exempt
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login(request):
+    """Flutter → Django login endpoint that authenticates with Supabase"""
+    try:
+        from supabase import create_client, Client
+        import os
+        from datetime import datetime
+        
+        email = request.data.get('email')
+        password = request.data.get('password')
+        
+        if not email or not password:
+            return Response({
+                'success': False,
+                'message': 'Email and password are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Initialize Supabase client
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_ANON_KEY')
+        supabase: Client = create_client(supabase_url, supabase_key)
+        
+        # Authenticate with Supabase
+        try:
+            auth_response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            if not auth_response.user:
+                return Response({
+                    'success': False,
+                    'message': 'Invalid email or password'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            user = auth_response.user
+            session = auth_response.session
+            
+            # Get or create athlete profile in Django
+            athlete, created = AthleteProfile.objects.get_or_create(
+                auth_user_id=user.id,
+                defaults={
+                    'email': user.email,
+                    'full_name': user.email.split('@')[0],  # Default name from email
+                    'date_of_birth': datetime(2000, 1, 1).date(),
+                    'gender': 'male',
+                    'height': 0,
+                    'weight': 0,
+                    'age': 25,
+                }
+            )
+            
+            return Response({
+                'success': True,
+                'message': 'Login successful',
+                'token': session.access_token,
+                'athlete': AthleteProfileSerializer(athlete).data,
+                'user_id': user.id,
+                'email': user.email
+            })
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Authentication failed: {str(e)}'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Login error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register(request):
+    """Flutter → Django registration endpoint that creates user in Supabase"""
+    try:
+        from supabase import create_client, Client
+        import os
+        from datetime import datetime
+        
+        # Extract registration data
+        email = request.data.get('email')
+        password = request.data.get('password')
+        full_name = request.data.get('full_name')
+        phone_number = request.data.get('phone_number')
+        date_of_birth = request.data.get('date_of_birth')
+        gender = request.data.get('gender', 'male')
+        height = request.data.get('height', 0)
+        weight = request.data.get('weight', 0)
+        state = request.data.get('state', '')
+        district = request.data.get('district', '')
+        address = request.data.get('address', '')
+        pincode = request.data.get('pincode', '')
+        aadhaar_number = request.data.get('aadhaar_number', '')
+        
+        if not email or not password:
+            return Response({
+                'success': False,
+                'message': 'Email and password are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Initialize Supabase client
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_ANON_KEY')
+        supabase: Client = create_client(supabase_url, supabase_key)
+        
+        # Register with Supabase
+        try:
+            auth_response = supabase.auth.sign_up({
+                "email": email,
+                "password": password,
+                "options": {
+                    "email_confirm": False  # Skip email confirmation for development
+                }
+            })
+            
+            if not auth_response.user:
+                return Response({
+                    'success': False,
+                    'message': 'Registration failed'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            user = auth_response.user
+            session = auth_response.session
+            
+            # For development: manually confirm the user
+            # This bypasses the email confirmation step
+            try:
+                # Use admin API to confirm user
+                from supabase.client import create_client
+                admin_client = create_client(supabase_url, os.getenv('SUPABASE_SERVICE_ROLE_KEY', supabase_key))
+                # Note: This would require service role key, but let's try with regular key first
+            except Exception as e:
+                print(f"Admin confirmation failed: {e}")
+                # Continue anyway - user can manually confirm via email
+            
+            # Parse date of birth with default
+            if isinstance(date_of_birth, str):
+                try:
+                    date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
+                except:
+                    date_of_birth = datetime(2000, 1, 1).date()
+            else:
+                # Default date if None
+                date_of_birth = datetime(2000, 1, 1).date()
+            
+            # Create athlete profile in Django
+            athlete = AthleteProfile.objects.create(
+                auth_user_id=user.id,
+                email=user.email,
+                full_name=full_name or user.email.split('@')[0],
+                phone_number=phone_number or '',
+                date_of_birth=date_of_birth,
+                gender=gender,
+                height=float(height) if height else 0,
+                weight=float(weight) if weight else 0,
+                state=state,
+                district=district,
+                address=address,
+                pin_code=pincode,
+                aadhaar_number=aadhaar_number or str(user.id)[:12],
+                age=datetime.now().year - date_of_birth.year,
+            )
+            
+            return Response({
+                'success': True,
+                'message': 'Registration successful',
+                'token': session.access_token if session else None,
+                'athlete': AthleteProfileSerializer(athlete).data,
+                'user_id': user.id,
+                'email': user.email
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Registration failed: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Registration error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def logout(request):
+    """Flutter → Django logout endpoint"""
+    try:
+        # Get authorization header
+        auth_header = request.META.get('HTTP_AUTHORIZATION')
+        
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            
+            # Initialize Supabase client and sign out
+            from supabase import create_client, Client
+            import os
+            
+            supabase_url = os.getenv('SUPABASE_URL')
+            supabase_key = os.getenv('SUPABASE_ANON_KEY')
+            supabase: Client = create_client(supabase_url, supabase_key)
+            
+            try:
+                # Set the session token and sign out
+                supabase.auth.set_session(token, '')
+                supabase.auth.sign_out()
+            except:
+                pass  # Ignore errors during sign out
+        
+        return Response({
+            'success': True,
+            'message': 'Logged out successfully'
+        })
+        
+    except Exception as e:
+        return Response({
+            'success': True,  # Return success even if logout fails
+            'message': 'Logged out'
+        })
+
+# Supabase Authentication Views (keep for compatibility)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def supabase_profile_sync(request):

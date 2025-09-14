@@ -35,6 +35,9 @@ class SupabaseAuthMiddleware(MiddlewareMixin):
             '/api/v1/device/optimize/',
             '/api/auth/profile-sync/',
             '/api/auth/profile/',
+            '/api/auth/login/',
+            '/api/auth/register/',
+            '/api/auth/logout/',
             '/static/',
             '/media/',
         ]
