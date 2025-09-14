@@ -30,16 +30,14 @@ DEBUG = True
 ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost', 
-    '172.27.75.15',
-    '172.16.0.2',
-    '192.168.1.100',  # Replace with your laptop's actual IP
+    '172.27.74.88',
     '0.0.0.0',        # Allow all IPs (development only!)
 ]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Flutter web
     "http://127.0.0.1:3000",
-    "http://172.16.0.2:8000",
+    "http://172.27.74.88:8000",
     "http://0.0.0.0:8000",
 ]
 
