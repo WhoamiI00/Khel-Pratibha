@@ -901,3 +901,106 @@ def custom_500(request):
         'status_code': 500,
         'support_contact': 'support@sai-talent-platform.gov.in'
     }, status=500)
+
+
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
+from rest_framework.authtoken.models import Token
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from django.db import transaction
+from .models import AthleteProfile
+from .serializers import AthleteProfileSerializer
+import uuid
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_athlete(request):
+    """Register a new athlete"""
+    try:
+        with transaction.atomic():
+            # Create Django User
+            user = User.objects.create_user(
+                username=request.data.get('email'),
+                email=request.data.get('email'),
+                password=request.data.get('password'),
+                first_name=request.data.get('full_name', '').split(' '),
+                last_name=' '.join(request.data.get('full_name', '').split(' ')[1:])
+            )
+            
+            # Calculate age from date_of_birth
+            from datetime import datetime
+            date_of_birth = datetime.strptime(request.data.get('date_of_birth'), '%Y-%m-%d').date()
+            age = datetime.now().year - date_of_birth.year
+            
+            # Create AthleteProfile
+            athlete = AthleteProfile.objects.create(
+                auth_user_id=uuid.uuid4(),  # Generate UUID for Supabase compatibility
+                full_name=request.data.get('full_name'),
+                date_of_birth=date_of_birth,
+                age=age,
+                gender=request.data.get('gender'),
+                height=request.data.get('height'),
+                weight=request.data.get('weight'),
+                phone_number=request.data.get('phone_number'),
+                email=request.data.get('email'),
+                address=request.data.get('address'),
+                state=request.data.get('state'),
+                district=request.data.get('district'),
+                pincode=request.data.get('pincode'),
+                aadhaar_number=request.data.get('aadhaar_number'),
+                location_category='urban'  # Default, can be enhanced
+            )
+            
+            # Create token
+            token, created = Token.objects.get_or_create(user=user)
+            
+            return Response({
+                'token': token.key,
+                'athlete': AthleteProfileSerializer(athlete).data,
+                'message': 'Registration successful!'
+            }, status=status.HTTP_201_CREATED)
+            
+    except Exception as e:
+        return Response({
+            'message': f'Registration failed: {str(e)}'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_athlete(request):
+    """Login athlete"""
+    email = request.data.get('email')
+    password = request.data.get('password')
+    
+    user = authenticate(username=email, password=password)
+    
+    if user:
+        try:
+            athlete = AthleteProfile.objects.get(email=email)
+            token, created = Token.objects.get_or_create(user=user)
+            
+            return Response({
+                'token': token.key,
+                'athlete': AthleteProfileSerializer(athlete).data,
+                'message': 'Login successful!'
+            })
+        except AthleteProfile.DoesNotExist:
+            return Response({
+                'message': 'Athlete profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+    else:
+        return Response({
+            'message': 'Invalid credentials'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """Health check endpoint"""
+    return Response({
+        'status': 'healthy',
+        'message': 'Backend is running'
+    })

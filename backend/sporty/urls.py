@@ -37,8 +37,8 @@ from rest_framework.authtoken.views import obtain_auth_token
 urlpatterns = [
     # Admin interface
     path('admin/', admin.site.urls),
-
-    path('api/auth/login/', obtain_auth_token, name='api_token_auth'),
+    path('api/auth/register/', views.register_athlete, name='register'),
+    path('api/auth/login/', views.login_athlete, name='login'),
     # API endpoints
     path('api/v1/', include(router.urls)),
     

@@ -25,7 +25,7 @@ class _SplashScreenState extends State<SplashScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final initResult = await authProvider.init();
       
-      if (!initResult.success) {
+      if (!initResult['success']) {
         // If connection fails, show connection test screen
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/connection_test');

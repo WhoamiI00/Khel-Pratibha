@@ -1,7 +1,7 @@
 class ApiConstants {
   // For Android emulator
-  static String baseUrl = '172.27.75.15:8000/api/v1';
-  static String authUrl = '172.27.75.15:8000/api/auth';
+  static String baseUrl = '172.27.74.88:8000/api/v1';
+  static String authUrl = '172.27.74.88:8000/api/auth';
   
   // For physical devices, uncomment and use your computer's IP address
   // static String baseUrl = '192.168.1.X:8000/api/v1'; // Replace X with your IP
