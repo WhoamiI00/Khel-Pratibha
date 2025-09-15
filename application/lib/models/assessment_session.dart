@@ -43,35 +43,39 @@ class AssessmentSession {
 
   factory AssessmentSession.fromJson(Map<String, dynamic> json) {
     return AssessmentSession(
-      id: json['id'],
-      athleteId: json['athlete'],
-      sessionName: json['session_name'],
-      status: json['status'],
-      totalTests: json['total_tests'] ?? 0,
-      completedTests: json['completed_tests'] ?? 0,
+      id: json['id']?.toString() ?? '',
+      athleteId: json['athlete']?.toString(),
+      sessionName: json['session_name']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      totalTests: json['total_tests'] is String 
+          ? int.tryParse(json['total_tests']) ?? 0 
+          : json['total_tests'] ?? 0,
+      completedTests: json['completed_tests'] is String 
+          ? int.tryParse(json['completed_tests']) ?? 0 
+          : json['completed_tests'] ?? 0,
       overallScore: json['overall_score'] != null 
-          ? double.parse(json['overall_score'].toString()) 
+          ? double.tryParse(json['overall_score'].toString()) 
           : null,
-      overallGrade: json['overall_grade'],
+      overallGrade: json['overall_grade']?.toString(),
       percentileRank: json['percentile_rank'] != null 
-          ? double.parse(json['percentile_rank'].toString()) 
+          ? double.tryParse(json['percentile_rank'].toString()) 
           : null,
-      saiSubmissionId: json['sai_submission_id'],
-      saiOfficerNotes: json['sai_officer_notes'],
-      saiVerificationStatus: json['sai_verification_status'],
+      saiSubmissionId: json['sai_submission_id']?.toString(),
+      saiOfficerNotes: json['sai_officer_notes']?.toString(),
+      saiVerificationStatus: json['sai_verification_status']?.toString(),
       deviceInfo: json['device_info'] != null 
           ? Map<String, dynamic>.from(json['device_info']) 
           : null,
-      networkQuality: json['network_quality'],
-      createdAt: DateTime.parse(json['created_at']),
+      networkQuality: json['network_quality']?.toString(),
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
       completedAt: json['completed_at'] != null 
-          ? DateTime.parse(json['completed_at']) 
+          ? DateTime.tryParse(json['completed_at'].toString()) 
           : null,
       submittedAt: json['submitted_at'] != null 
-          ? DateTime.parse(json['submitted_at']) 
+          ? DateTime.tryParse(json['submitted_at'].toString()) 
           : null,
-      athleteName: json['athlete_name'],
-      progressPercentage: double.parse(json['progress_percentage']?.toString() ?? '0'),
+      athleteName: json['athlete_name']?.toString(),
+      progressPercentage: double.tryParse(json['progress_percentage']?.toString() ?? '0') ?? 0.0,
     );
   }
 }

@@ -126,9 +126,22 @@ class AssessmentProvider extends ChangeNotifier {
       
       if (result['success']) {
         // Update session progress
-        final progressParts = result['data']['session_progress'].split('/');
-        final completed = int.parse(progressParts[0]);
-        final total = int.parse(progressParts[1]);
+        final progressString = result['data']['session_progress']?.toString() ?? '0/0';
+        final progressParts = progressString.split('/');
+        
+        int completed = 0;
+        int total = 1;
+        
+        // Safely parse progress parts
+        if (progressParts.isNotEmpty) {
+          completed = int.tryParse(progressParts[0].toString()) ?? 0;
+        }
+        if (progressParts.length > 1) {
+          total = int.tryParse(progressParts[1].toString()) ?? 1;
+        }
+        
+        // Ensure total is never 0 to avoid division by zero
+        if (total == 0) total = 1;
         
         _currentSession = AssessmentSession(
           id: _currentSession!.id,

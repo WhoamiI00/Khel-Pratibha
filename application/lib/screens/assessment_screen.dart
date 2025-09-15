@@ -2,10 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
-import 'dart:async';
 import '../providers/assessment_provider.dart';
-import '../models/fitness_test.dart';
-import '../models/assessment_session.dart';
+import '../widgets/media_upload_widget.dart';
+import '../widgets/media_history_widget.dart';
 
 class AssessmentScreen extends StatefulWidget {
   const AssessmentScreen({super.key});
@@ -17,10 +16,7 @@ class AssessmentScreen extends StatefulWidget {
 class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _currentTestIndex = 0;
-  bool _isRecording = false;
   bool _isProcessing = false;
-  Timer? _recordingTimer;
-  int _recordingSeconds = 0;
   File? _recordedVideo;
 
   @override
@@ -42,47 +38,7 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
   @override
   void dispose() {
     _tabController.dispose();
-    _recordingTimer?.cancel();
     super.dispose();
-  }
-
-  void _startRecording() {
-    setState(() {
-      _isRecording = true;
-      _recordingSeconds = 0;
-    });
-
-    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _recordingSeconds++;
-      });
-    });
-
-    // TODO: Implement actual video recording
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Video recording started (simulated)'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  void _stopRecording() {
-    _recordingTimer?.cancel();
-    setState(() {
-      _isRecording = false;
-    });
-
-    // TODO: Implement actual video recording stop and get file
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Video recording stopped (simulated)'),
-        backgroundColor: Colors.orange,
-      ),
-    );
-    
-    // Simulate video file creation
-    // _recordedVideo = File('path/to/recorded/video.mp4');
   }
 
   Future<void> _submitTest() async {
@@ -97,6 +53,18 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
     }
 
     final assessmentProvider = Provider.of<AssessmentProvider>(context, listen: false);
+    
+    // Safe access to fitness test
+    if (_currentTestIndex >= assessmentProvider.fitnessTests.length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid test index'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
     final currentTest = assessmentProvider.fitnessTests[_currentTestIndex];
 
     setState(() {
@@ -263,7 +231,7 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
   }
 
   Widget _buildCurrentTestTab(AssessmentProvider assessmentProvider) {
-    if (_currentTestIndex >= assessmentProvider.fitnessTests.length) {
+    if (assessmentProvider.fitnessTests.isEmpty || _currentTestIndex >= assessmentProvider.fitnessTests.length) {
       return const Center(
         child: Text('All tests completed!'),
       );
@@ -395,7 +363,7 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
           ),
           const SizedBox(height: 16),
 
-          // Recording Section
+          // Media Upload Section
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -411,110 +379,47 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
                   ),
                   const SizedBox(height: 16),
                   
-                  // Camera Preview Area
-                  Container(
-                    height: 200,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
+                  // Media Upload Widget
+                  MediaUploadWidget(
+                    onMediaUploaded: (url, type) {
+                      setState(() {
+                        _recordedVideo = File(url); // Store the uploaded file reference
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Media uploaded successfully! You can now submit your test.'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    },
+                    onUploadError: (error) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Upload failed: $error'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    },
+                  ),
+                  
+                  if (_recordedVideo != null) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : _submitTest,
+                      icon: _isProcessing 
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.upload),
+                      label: Text(_isProcessing ? 'Processing...' : 'Submit Test'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
-                    child: _isRecording
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.videocam,
-                                size: 48,
-                                color: Colors.red,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Recording: ${_formatTime(_recordingSeconds)}',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red,
-                                ),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.video_camera_front,
-                                size: 48,
-                                color: Colors.grey[600],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _recordedVideo != null 
-                                    ? 'Video recorded successfully!'
-                                    : 'Camera preview will appear here',
-                                style: TextStyle(
-                                  color: _recordedVideo != null ? Colors.green : Colors.grey[600],
-                                  fontWeight: _recordedVideo != null ? FontWeight.bold : null,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Recording Controls
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      if (!_isRecording && _recordedVideo == null)
-                        ElevatedButton.icon(
-                          onPressed: _startRecording,
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('Start Recording'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
-                        )
-                      else if (_isRecording)
-                        ElevatedButton.icon(
-                          onPressed: _stopRecording,
-                          icon: const Icon(Icons.stop),
-                          label: const Text('Stop Recording'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                          ),
-                        )
-                      else ...[
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _recordedVideo = null;
-                            });
-                          },
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Record Again'),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: _isProcessing ? null : _submitTest,
-                          icon: _isProcessing 
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.upload),
-                          label: Text(_isProcessing ? 'Processing...' : 'Submit Test'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -595,7 +500,7 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          'Started: ${assessmentProvider.currentSession!.createdAt.toString().split(' ')[0]}',
+                          'Started: ${assessmentProvider.currentSession!.createdAt.toString().split(' ').isNotEmpty ? assessmentProvider.currentSession!.createdAt.toString().split(' ').first : 'Unknown'}',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -609,6 +514,18 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
             ),
             const SizedBox(height: 16),
           ],
+
+          // Media History Section
+          const Text(
+            'Your Uploaded Media',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const MediaHistoryWidget(),
+          const SizedBox(height: 24),
 
           // Test List
           const Text(

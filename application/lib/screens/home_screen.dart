@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/assessment_provider.dart';
+import '../widgets/media_upload_widget.dart';
+import '../widgets/media_history_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -361,9 +363,27 @@ class _AssessmentTabState extends State<AssessmentTab> {
                           const SizedBox(height: 16),
                           ElevatedButton(
                             onPressed: () async {
-                              final success = await assessmentProvider.startAssessment();
-                              if (success && mounted) {
-                                Navigator.pushNamed(context, '/assessment');
+                              try {
+                                final success = await assessmentProvider.startAssessment();
+                                if (success && mounted) {
+                                  Navigator.pushNamed(context, '/assessment');
+                                } else if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to start assessment: ${assessmentProvider.errorMessage ?? "Unknown error"}'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
                               }
                             },
                             child: const Text('Start New Assessment'),
@@ -371,6 +391,61 @@ class _AssessmentTabState extends State<AssessmentTab> {
                         ],
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Media Upload Section
+                  const Text(
+                    'Upload Assessment Media',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Capture or upload photos and videos for your assessment',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Media Upload Widget
+                  MediaUploadWidget(
+                    onMediaUploaded: (mediaUrl, mediaType) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${mediaType == 'image' ? 'Image' : 'Video'} uploaded successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    },
+                    onUploadStarted: () {
+                      // Handle upload started if needed
+                    },
+                    onUploadError: (error) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Upload error: $error'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Media History Widget
+                  MediaHistoryWidget(
+                    onMediaDeleted: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Media deleted successfully'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
                 ],

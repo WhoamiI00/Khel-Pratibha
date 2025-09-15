@@ -36,6 +36,7 @@ dependencies:
   # Video handling
   video_player: ^2.8.1
   camera: ^0.10.5+5
+  video_thumbnail: ^0.5.3
 
   # File handling
   # File picking - temporarily disabled due to compatibility issues
