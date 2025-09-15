@@ -12,7 +12,7 @@ class AuthProvider with ChangeNotifier {
   AthleteProfile? _currentAthlete;
 
   // Django backend URL - Use your Django server IP
-  static const String _baseUrl = 'http://10.136.205.117:8000/api/auth';
+  static const String _baseUrl = 'http://172.27.74.88:8000/api/auth';
 
   // Getters
   bool get isAuthenticated => _isAuthenticated;

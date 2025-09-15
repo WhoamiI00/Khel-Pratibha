@@ -1,8 +1,6 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'services/supabase_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/assessment_provider.dart';
 import 'providers/leaderboard_provider.dart';
@@ -18,14 +16,7 @@ import 'screens/connection_test_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  try {
-    // Initialize Supabase
-    await SupabaseService.initialize();
-    print('✅ Supabase initialization completed');
-  } catch (e) {
-    print('❌ Supabase initialization failed: $e');
-    // Continue anyway to see the app
-  }
+  print('🚀 Starting KhelPratibha App...');
   
   runApp(const KhelPratibhaApp());
 }
