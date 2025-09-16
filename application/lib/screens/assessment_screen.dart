@@ -54,8 +54,13 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
 
     final assessmentProvider = Provider.of<AssessmentProvider>(context, listen: false);
     
-    // Safe access to fitness test
+    // Safe access to fitness test with debugging
+    print('DEBUG: _currentTestIndex = $_currentTestIndex');
+    print('DEBUG: fitnessTests.length = ${assessmentProvider.fitnessTests.length}');
+    print('DEBUG: _currentTestIndex type = ${_currentTestIndex.runtimeType}');
+    
     if (_currentTestIndex >= assessmentProvider.fitnessTests.length) {
+      print('ERROR: Test index out of bounds!');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Invalid test index'),
@@ -65,7 +70,9 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
       return;
     }
     
+    print('DEBUG: About to access fitnessTests[$_currentTestIndex]');
     final currentTest = assessmentProvider.fitnessTests[_currentTestIndex];
+    print('DEBUG: Successfully accessed currentTest: ${currentTest.displayName}');
 
     setState(() {
       _isProcessing = true;
@@ -231,13 +238,38 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
   }
 
   Widget _buildCurrentTestTab(AssessmentProvider assessmentProvider) {
-    if (assessmentProvider.fitnessTests.isEmpty || _currentTestIndex >= assessmentProvider.fitnessTests.length) {
-      return const Center(
-        child: Text('All tests completed!'),
-      );
-    }
+    try {
+      print('DEBUG: _buildCurrentTestTab called');
+      print('DEBUG: fitnessTests.length = ${assessmentProvider.fitnessTests.length}');
+      print('DEBUG: _currentTestIndex = $_currentTestIndex');
+      
+      if (assessmentProvider.fitnessTests.isEmpty) {
+        return const Center(
+          child: Text('No fitness tests available'),
+        );
+      }
 
-    final currentTest = assessmentProvider.fitnessTests[_currentTestIndex];
+      // Ensure _currentTestIndex is within bounds
+      if (_currentTestIndex >= assessmentProvider.fitnessTests.length) {
+        return const Center(
+          child: Text('All tests completed!'),
+        );
+      }
+
+      // Additional safety check
+      if (_currentTestIndex < 0) {
+        print('DEBUG: Resetting negative _currentTestIndex to 0');
+        setState(() {
+          _currentTestIndex = 0;
+        });
+      }
+
+      print('DEBUG: _buildCurrentTestTab - accessing fitnessTests[$_currentTestIndex]');
+      print('DEBUG: fitnessTests type: ${assessmentProvider.fitnessTests.runtimeType}');
+      print('DEBUG: _currentTestIndex type: ${_currentTestIndex.runtimeType}');
+      
+      final currentTest = assessmentProvider.fitnessTests[_currentTestIndex];
+      print('DEBUG: Successfully got currentTest: ${currentTest.displayName}');
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -456,6 +488,32 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
         ],
       ),
     );
+    } catch (e, stackTrace) {
+      print('ERROR in _buildCurrentTestTab: $e');
+      print('Stack trace: $stackTrace');
+      print('_currentTestIndex: $_currentTestIndex');
+      print('fitnessTests.length: ${assessmentProvider.fitnessTests.length}');
+      
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text('Error in assessment: $e'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _currentTestIndex = 0;
+                });
+              },
+              child: const Text('Reset'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildProgressTab(AssessmentProvider assessmentProvider) {

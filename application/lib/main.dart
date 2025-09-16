@@ -12,6 +12,7 @@ import 'screens/profile_screen.dart';
 import 'screens/assessment_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/connection_test_screen.dart';
+import 'screens/jwt_token_test.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,6 +72,7 @@ class KhelPratibhaApp extends StatelessWidget {
           '/assessment': (context) => const AssessmentScreen(),
           '/leaderboard': (context) => const LeaderboardScreen(),
           '/connection_test': (context) => const ConnectionTestScreen(),
+          '/jwt_test': (context) => const JwtTokenTest(),
         },
       ),
     );

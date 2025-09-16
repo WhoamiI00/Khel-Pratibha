@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/api_response.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
+import '../utils/env_config.dart';
 
 class ApiService {
   // Use constants from ApiConstants class
@@ -21,10 +22,16 @@ class ApiService {
   Map<String, String> get authHeaders => {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    if (_jwtToken != null) 'Authorization': 'Bearer $_jwtToken',
+    'Authorization': 'Bearer ${_jwtToken ?? EnvConfig.supabaseJwtToken}',
   };
 
   String? _jwtToken;
+
+  // Constructor - automatically set JWT token from environment
+  ApiService() {
+    // Set the JWT token from environment config on initialization
+    _jwtToken = EnvConfig.supabaseJwtToken;
+  }
 
   // Set JWT token for authentication
   void setJWTToken(String token) {
@@ -269,22 +276,69 @@ class ApiService {
   }
 
   // Fitness Tests Methods
-  Future<Map<String, dynamic>> getFitnessTests() async {
+  Future<ApiResponse<List<Map<String, dynamic>>>> getFitnessTests() async {
     try {
+      print('DEBUG: Fetching fitness tests from ${baseUrl}/fitness-tests/');
+      print('DEBUG: Using headers: $authHeaders');
       final response = await http.get(
-        Uri.parse('$baseUrl/fitness-tests/'),
+        Uri.parse('${baseUrl}/fitness-tests/'),
         headers: authHeaders,
       );
 
-      final data = jsonDecode(response.body);
+      print('DEBUG: Response status code: ${response.statusCode}');
+      print('DEBUG: Response body length: ${response.body.length}');
       
+      // Check if response is HTML (indicates 404 or server error page)
+      if (response.body.trim().startsWith('<!DOCTYPE html') || response.body.trim().startsWith('<html')) {
+        print('DEBUG: Received HTML response instead of JSON - likely a 404 or server error page');
+        print('DEBUG: First 200 characters of response: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}');
+        return ApiResponse.error('Server returned HTML page instead of JSON data. Check API endpoint URL.');
+      }
+      
+      final data = json.decode(response.body);
+      print('DEBUG: Decoded data type: ${data.runtimeType}');
+      
+      // Safe substring to avoid index errors
+      final dataStr = data.toString();
+      final maxLen = dataStr.length > 500 ? 500 : dataStr.length;
+      print('DEBUG: Raw API response structure: ${dataStr.substring(0, maxLen)}');
+
       if (response.statusCode == 200) {
-        return {'success': true, 'data': data['results']};
+        print('DEBUG: Checking if data has results key: ${data.containsKey('results')}');
+        print('DEBUG: Data keys: ${data.keys.toList()}');
+        
+        final List<dynamic> results = data['results'];
+        print('DEBUG: Results list length: ${results.length}');
+        print('DEBUG: Results type: ${results.runtimeType}');
+        
+        if (results.isNotEmpty) {
+          print('DEBUG: First result type: ${results[0].runtimeType}');
+          final firstResultStr = results[0].toString();
+          final firstMaxLen = firstResultStr.length > 300 ? 300 : firstResultStr.length;
+          print('DEBUG: First result structure: ${firstResultStr.substring(0, firstMaxLen)}');
+        }
+        
+        List<Map<String, dynamic>> fitnessTests = [];
+        for (int i = 0; i < results.length; i++) {
+          try {
+            print('DEBUG: Processing fitness test $i');
+            final Map<String, dynamic> testData = results[i] as Map<String, dynamic>;
+            fitnessTests.add(testData);
+            print('DEBUG: Successfully parsed fitness test $i');
+          } catch (e) {
+            print('DEBUG: Error parsing fitness test $i: $e');
+            print('DEBUG: Problematic JSON: ${results[i]}');
+            rethrow;
+          }
+        }
+        
+        return ApiResponse.success(fitnessTests);
       } else {
-        return {'success': false, 'error': data};
+        return ApiResponse.error('Failed to load fitness tests: ${response.statusCode}');
       }
     } catch (e) {
-      return {'success': false, 'error': 'Network error: $e'};
+      print('DEBUG: Exception in getFitnessTests: $e');
+      return ApiResponse.error('Exception in getFitnessTests: $e');
     }
   }
 

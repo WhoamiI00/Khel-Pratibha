@@ -65,39 +65,66 @@ class AthleteProfile {
 
   factory AthleteProfile.fromJson(Map<String, dynamic> json) {
     return AthleteProfile(
-      id: json['id'],
-      authUserId: json['auth_user_id'],
-      fullName: json['full_name'],
-      dateOfBirth: DateTime.parse(json['date_of_birth']),
-      age: json['age'],
-      gender: json['gender'],
-      height: double.parse(json['height'].toString()),
-      weight: double.parse(json['weight'].toString()),
-      phoneNumber: json['phone_number'],
-      email: json['email'],
-      address: json['address'],
-      state: json['state'],
-      district: json['district'],
-      pinCode: json['pin_code'],
-      locationCategory: json['location_category'],
-      aadhaarNumber: json['aadhaar_number'],
-      sportsInterests: List<String>.from(json['sports_interests'] ?? []),
-      previousSportsExperience: json['previous_sports_experience'],
-      profilePictureUrl: json['profile_picture_url'],
+      id: json['id']?.toString() ?? '',
+      authUserId: json['auth_user_id']?.toString() ?? '',
+      fullName: json['full_name']?.toString() ?? '',
+      dateOfBirth: _parseDateTime(json['date_of_birth']) ?? DateTime.now(),
+      age: _parseInt(json['age']) ?? 0,
+      gender: json['gender']?.toString() ?? '',
+      height: _parseDouble(json['height']) ?? 0.0,
+      weight: _parseDouble(json['weight']) ?? 0.0,
+      phoneNumber: json['phone_number']?.toString() ?? '',
+      email: json['email']?.toString(),
+      address: json['address']?.toString() ?? '',
+      state: json['state']?.toString() ?? '',
+      district: json['district']?.toString() ?? '',
+      pinCode: json['pin_code']?.toString() ?? '',
+      locationCategory: json['location_category']?.toString() ?? '',
+      aadhaarNumber: json['aadhaar_number']?.toString() ?? '',
+      sportsInterests: _parseStringList(json['sports_interests']),
+      previousSportsExperience: json['previous_sports_experience']?.toString(),
+      profilePictureUrl: json['profile_picture_url']?.toString(),
       isVerified: json['is_verified'] ?? false,
-      verificationStatus: json['verification_status'] ?? 'pending',
-      overallTalentScore: json['overall_talent_score'] != null 
-          ? double.parse(json['overall_talent_score'].toString()) 
-          : null,
-      talentGrade: json['talent_grade'],
-      nationalRanking: json['national_ranking'],
-      stateRanking: json['state_ranking'],
-      totalPoints: json['total_points'] ?? 0,
-      badgesEarned: List<String>.from(json['badges_earned'] ?? []),
-      level: json['level'] ?? 1,
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      verificationStatus: json['verification_status']?.toString() ?? 'pending',
+      overallTalentScore: _parseDouble(json['overall_talent_score']),
+      talentGrade: json['talent_grade']?.toString(),
+      nationalRanking: _parseInt(json['national_ranking']),
+      stateRanking: _parseInt(json['state_ranking']),
+      totalPoints: _parseInt(json['total_points']) ?? 0,
+      badgesEarned: _parseStringList(json['badges_earned']),
+      level: _parseInt(json['level']) ?? 1,
+      createdAt: _parseDateTime(json['created_at']) ?? DateTime.now(),
+      updatedAt: _parseDateTime(json['updated_at']) ?? DateTime.now(),
     );
+  }
+
+  static int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    if (value is double) return value.toInt();
+    return null;
+  }
+
+  static double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value.toString());
+  }
+
+  static List<String> _parseStringList(dynamic value) {
+    if (value == null) return [];
+    if (value is List) {
+      return value.map((item) => item.toString()).toList();
+    }
+    return [];
   }
 
   Map<String, dynamic> toJson() {

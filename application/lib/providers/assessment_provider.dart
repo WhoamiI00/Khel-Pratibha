@@ -8,6 +8,12 @@ import '../services/api_service.dart';
 class AssessmentProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
   
+  // Constructor - ensure API service is initialized with JWT token
+  AssessmentProvider() {
+    // The API service now automatically sets the JWT token from environment
+    print('DEBUG: AssessmentProvider initialized with API service');
+  }
+  
   List<FitnessTest> _fitnessTests = [];
   AssessmentSession? _currentSession;
   List<TestRecording> _testRecordings = [];
@@ -24,16 +30,37 @@ class AssessmentProvider extends ChangeNotifier {
     _setLoading(true);
     
     try {
+      print('DEBUG: AssessmentProvider - Starting to load fitness tests');
       final result = await _apiService.getFitnessTests();
       
-      if (result['success']) {
-        _fitnessTests = (result['data'] as List)
-            .map((json) => FitnessTest.fromJson(json))
-            .toList();
+      if (result.success && result.data != null) {
+        print('DEBUG: AssessmentProvider - Received ${result.data!.length} fitness tests from API');
+        
+        _fitnessTests = [];
+        for (int i = 0; i < result.data!.length; i++) {
+          try {
+            print('DEBUG: AssessmentProvider - Processing fitness test $i');
+            final testData = result.data![i];
+            print('DEBUG: AssessmentProvider - Test data keys: ${testData.keys.toList()}');
+            print('DEBUG: AssessmentProvider - Test data: ${testData.toString().substring(0, testData.toString().length > 200 ? 200 : testData.toString().length)}');
+            
+            final fitnessTest = FitnessTest.fromJson(testData);
+            _fitnessTests.add(fitnessTest);
+            print('DEBUG: AssessmentProvider - Successfully parsed fitness test $i: ${fitnessTest.name}');
+          } catch (e) {
+            print('DEBUG: AssessmentProvider - Error parsing fitness test $i: $e');
+            print('DEBUG: AssessmentProvider - Problematic test data: ${result.data![i]}');
+            // Continue with other tests instead of failing completely
+          }
+        }
+        
+        print('DEBUG: AssessmentProvider - Total successfully parsed tests: ${_fitnessTests.length}');
       } else {
-        _setError(result['error'].toString());
+        _setError(result.error ?? 'Failed to load fitness tests');
+        print('DEBUG: AssessmentProvider - API response error: ${result.error}');
       }
     } catch (e) {
+      print('DEBUG: AssessmentProvider - Exception loading fitness tests: $e');
       _setError('Error loading fitness tests: $e');
     } finally {
       _setLoading(false);
@@ -72,22 +99,37 @@ class AssessmentProvider extends ChangeNotifier {
       final result = await _apiService.getAssessmentSessions();
       
       if (result['success']) {
-        final sessions = (result['data'] as List)
-            .map((json) => AssessmentSession.fromJson(json))
-            .toList();
-        
-        // Set current session to the most recent in-progress session
-        if (sessions.isNotEmpty) {
-          try {
-            _currentSession = sessions.firstWhere(
-              (session) => ['created', 'in_progress'].contains(session.status),
-            );
-          } catch (e) {
-            // If no session with the desired status is found, use the first one
-            _currentSession = sessions.first;
+        final data = result['data'];
+        if (data is List) {
+          final sessions = data
+              .map((item) {
+                try {
+                  return AssessmentSession.fromJson(item as Map<String, dynamic>);
+                } catch (e) {
+                  print('Error parsing assessment session: $e');
+                  return null;
+                }
+              })
+              .where((session) => session != null)
+              .cast<AssessmentSession>()
+              .toList();
+          
+          // Set current session to the most recent in-progress session
+          if (sessions.isNotEmpty) {
+            try {
+              _currentSession = sessions.firstWhere(
+                (session) => ['created', 'in_progress'].contains(session.status),
+              );
+            } catch (e) {
+              // If no session with the desired status is found, use the first one
+              _currentSession = sessions.first;
+            }
+          } else {
+            _currentSession = null;
           }
         } else {
           _currentSession = null;
+          _setError('Invalid assessment sessions data format');
         }
       } else {
         _setError(result['error'].toString());
@@ -126,18 +168,46 @@ class AssessmentProvider extends ChangeNotifier {
       
       if (result['success']) {
         // Update session progress
-        final progressString = result['data']['session_progress']?.toString() ?? '0/0';
-        final progressParts = progressString.split('/');
+        final progressData = result['data']['session_progress'];
         
         int completed = 0;
         int total = 1;
         
-        // Safely parse progress parts
-        if (progressParts.isNotEmpty) {
-          completed = int.tryParse(progressParts[0].toString()) ?? 0;
-        }
-        if (progressParts.length > 1) {
-          total = int.tryParse(progressParts[1].toString()) ?? 1;
+        // Safely parse progress data
+        try {
+          print('DEBUG: progressData = $progressData (type: ${progressData.runtimeType})');
+          
+          if (progressData != null) {
+            if (progressData is String) {
+              print('DEBUG: Processing progress as String: $progressData');
+              final progressParts = progressData.split('/');
+              print('DEBUG: progressParts = $progressParts, length = ${progressParts.length}');
+              
+              if (progressParts.isNotEmpty) {
+                final part0 = progressParts[0];
+                print('DEBUG: progressParts[0] = $part0 (type: ${part0.runtimeType})');
+                completed = int.tryParse(part0) ?? 0;
+                print('DEBUG: parsed completed = $completed');
+              }
+              if (progressParts.length > 1) {
+                final part1 = progressParts[1];
+                print('DEBUG: progressParts[1] = $part1 (type: ${part1.runtimeType})');
+                total = int.tryParse(part1) ?? 1;
+                print('DEBUG: parsed total = $total');
+              }
+            } else if (progressData is Map) {
+              print('DEBUG: Processing progress as Map: $progressData');
+              completed = int.tryParse(progressData['completed']?.toString() ?? '0') ?? 0;
+              total = int.tryParse(progressData['total']?.toString() ?? '1') ?? 1;
+              print('DEBUG: Map parsed - completed: $completed, total: $total');
+            } else {
+              print('DEBUG: Unknown progressData type: ${progressData.runtimeType}');
+            }
+          }
+        } catch (e, stackTrace) {
+          print('ERROR in progress parsing: $e');
+          print('Stack trace: $stackTrace');
+          print('progressData was: $progressData');
         }
         
         // Ensure total is never 0 to avoid division by zero

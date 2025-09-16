@@ -22,16 +22,66 @@ class _HomeScreenState extends State<HomeScreen> {
     const ProfileTab(),
   ];
 
+  Widget _buildSafeScreen() {
+    try {
+      print('DEBUG: _currentIndex = $_currentIndex, _screens.length = ${_screens.length}');
+      
+      // Validate index bounds
+      if (_currentIndex < 0 || _currentIndex >= _screens.length) {
+        print('ERROR: Index out of bounds! _currentIndex: $_currentIndex, length: ${_screens.length}');
+        return const Center(
+          child: Text('Navigation error. Please restart the app.'),
+        );
+      }
+      
+      // Safe access
+      return _screens[_currentIndex];
+    } catch (e, stackTrace) {
+      print('ERROR in _buildSafeScreen: $e');
+      print('Stack trace: $stackTrace');
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text('Error: $e'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _currentIndex = 0; // Reset to first tab
+                });
+              },
+              child: const Text('Reset'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: _buildSafeScreen(),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex,
         selectedItemColor: Colors.orange,
         unselectedItemColor: Colors.grey,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) {
+          print('DEBUG: Bottom nav tapped with index: $index (type: ${index.runtimeType})');
+          setState(() {
+            if (index >= 0 && index < _screens.length) {
+              _currentIndex = index;
+              print('DEBUG: Set _currentIndex to $index');
+            } else {
+              print('ERROR: Invalid index received: $index');
+              _currentIndex = 0; // Fallback to first tab
+            }
+          });
+        },
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
@@ -364,6 +414,21 @@ class _AssessmentTabState extends State<AssessmentTab> {
                           ElevatedButton(
                             onPressed: () async {
                               try {
+                                // First ensure fitness tests are loaded
+                                if (assessmentProvider.fitnessTests.isEmpty) {
+                                  await assessmentProvider.loadFitnessTests();
+                                }
+
+                                if (assessmentProvider.fitnessTests.isEmpty && mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('No fitness tests available. Please try again later.'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
                                 final success = await assessmentProvider.startAssessment();
                                 if (success && mounted) {
                                   Navigator.pushNamed(context, '/assessment');
