@@ -211,14 +211,38 @@ class ApiService {
   }
 
   Future<ApiResponse<Map<String, dynamic>>> getAthleteProfile() async {
-    return _safeApiCall<Map<String, dynamic>>(
-      () => http.get(
-        Uri.parse('$baseUrl/athletes/'),
-        headers: authHeaders,
-      ).timeout(ApiConstants.requestTimeout),
-      (data) => {'results': data['results']}
-    );
+  try {
+    print('DEBUG: Fetching athlete profile from ${baseUrl}/athletes/');
+    final response = await http.get(
+      Uri.parse('$baseUrl/athletes/'),
+      headers: authHeaders,
+    ).timeout(ApiConstants.requestTimeout);
+
+    print('DEBUG: Response status code: ${response.statusCode}');
+    final data = json.decode(response.body);
+    print('DEBUG: Response data type: ${data.runtimeType}');
+    
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      // Handle both direct list and wrapped response formats
+      if (data is Map && data.containsKey('results')) {
+        print('DEBUG: Athlete profile has results wrapper');
+        return ApiResponse.success({'results': data['results']});
+      } else if (data is List) {
+        print('DEBUG: Athlete profile is direct list');
+        return ApiResponse.success({'results': data});
+      } else {
+        print('DEBUG: Athlete profile format: Map without results key');
+        return ApiResponse.success(data);
+      }
+    } else {
+      return ApiResponse.error('Failed to load athlete profile: ${response.statusCode}');
+    }
+  } catch (e, stackTrace) {
+    print('DEBUG: Exception in getAthleteProfile: $e');
+    print('DEBUG: Stack trace: $stackTrace');
+    return ApiResponse.error('Exception in getAthleteProfile: $e');
   }
+}
 
   Future<ApiResponse<Map<String, dynamic>>> updateAthleteProfile(String athleteId, Map<String, dynamic> updateData) async {
     return _safeApiCall<Map<String, dynamic>>(() => http.patch(
@@ -276,25 +300,27 @@ class ApiService {
   }
 
   // Fitness Tests Methods
-  Future<ApiResponse<List<Map<String, dynamic>>>> getFitnessTests() async {
-    try {
-      print('DEBUG: Fetching fitness tests from ${baseUrl}/fitness-tests/');
-      print('DEBUG: Using headers: $authHeaders');
-      final response = await http.get(
-        Uri.parse('${baseUrl}/fitness-tests/'),
-        headers: authHeaders,
-      );
+  // Updated getFitnessTests method
+Future<ApiResponse<List<Map<String, dynamic>>>> getFitnessTests() async {
+  try {
+    print('DEBUG: Fetching fitness tests from ${baseUrl}/fitness-tests/');
+    print('DEBUG: Using headers: $authHeaders');
+    final response = await http.get(
+      Uri.parse('${baseUrl}/fitness-tests/'),
+      headers: authHeaders,
+    );
 
-      print('DEBUG: Response status code: ${response.statusCode}');
-      print('DEBUG: Response body length: ${response.body.length}');
-      
-      // Check if response is HTML (indicates 404 or server error page)
-      if (response.body.trim().startsWith('<!DOCTYPE html') || response.body.trim().startsWith('<html')) {
-        print('DEBUG: Received HTML response instead of JSON - likely a 404 or server error page');
-        print('DEBUG: First 200 characters of response: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}');
-        return ApiResponse.error('Server returned HTML page instead of JSON data. Check API endpoint URL.');
-      }
-      
+    print('DEBUG: Response status code: ${response.statusCode}');
+    print('DEBUG: Response body length: ${response.body.length}');
+    
+    // Check if response is HTML (indicates 404 or server error page)
+    if (response.body.trim().startsWith('<!DOCTYPE html') || response.body.trim().startsWith('<html')) {
+      print('DEBUG: Received HTML response instead of JSON - likely a 404 or server error page');
+      print('DEBUG: First 200 characters of response: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}');
+      return ApiResponse.error('Server returned HTML page instead of JSON data. Check API endpoint URL.');
+    }
+    
+    if (response.statusCode == 200) {
       final data = json.decode(response.body);
       print('DEBUG: Decoded data type: ${data.runtimeType}');
       
@@ -303,44 +329,79 @@ class ApiService {
       final maxLen = dataStr.length > 500 ? 500 : dataStr.length;
       print('DEBUG: Raw API response structure: ${dataStr.substring(0, maxLen)}');
 
-      if (response.statusCode == 200) {
-        print('DEBUG: Checking if data has results key: ${data.containsKey('results')}');
-        print('DEBUG: Data keys: ${data.keys.toList()}');
-        
-        final List<dynamic> results = data['results'];
-        print('DEBUG: Results list length: ${results.length}');
-        print('DEBUG: Results type: ${results.runtimeType}');
-        
-        if (results.isNotEmpty) {
-          print('DEBUG: First result type: ${results[0].runtimeType}');
-          final firstResultStr = results[0].toString();
-          final firstMaxLen = firstResultStr.length > 300 ? 300 : firstResultStr.length;
-          print('DEBUG: First result structure: ${firstResultStr.substring(0, firstMaxLen)}');
+      // Handle both cases: direct list or wrapped in results object
+      List<dynamic> results;
+      
+      if (data is List) {
+        print('DEBUG: API returned direct list format');
+        results = data;
+      } else if (data is Map && data.containsKey('results')) {
+        print('DEBUG: API returned wrapped format with results key');
+        results = data['results'];
+      } else {
+        print('DEBUG: Unexpected API response format');
+        print('DEBUG: Data type: ${data.runtimeType}');
+        if (data is Map) {
+          print('DEBUG: Map keys: ${data.keys.toList()}');
         }
-        
-        List<Map<String, dynamic>> fitnessTests = [];
-        for (int i = 0; i < results.length; i++) {
-          try {
-            print('DEBUG: Processing fitness test $i');
+        return ApiResponse.error('Unexpected API response format');
+      }
+      
+      print('DEBUG: Results list length: ${results.length}');
+      print('DEBUG: Results type: ${results.runtimeType}');
+      
+      if (results.isNotEmpty) {
+        print('DEBUG: First result type: ${results[0].runtimeType}');
+        final firstResultStr = results[0].toString();
+        final firstMaxLen = firstResultStr.length > 300 ? 300 : firstResultStr.length;
+        print('DEBUG: First result structure: ${firstResultStr.substring(0, firstMaxLen)}');
+      }
+      
+      List<Map<String, dynamic>> fitnessTests = [];
+      for (int i = 0; i < results.length; i++) {
+        try {
+          print('DEBUG: Processing fitness test $i');
+          
+          // Ensure each item is a Map<String, dynamic>
+          if (results[i] is Map<String, dynamic>) {
             final Map<String, dynamic> testData = results[i] as Map<String, dynamic>;
             fitnessTests.add(testData);
-            print('DEBUG: Successfully parsed fitness test $i');
-          } catch (e) {
-            print('DEBUG: Error parsing fitness test $i: $e');
-            print('DEBUG: Problematic JSON: ${results[i]}');
-            rethrow;
+            print('DEBUG: Successfully parsed fitness test $i: ${testData['name'] ?? 'Unknown'}');
+          } else {
+            print('DEBUG: Item $i is not a Map<String, dynamic>: ${results[i].runtimeType}');
+            print('DEBUG: Item $i content: ${results[i]}');
+            // Try to convert to Map if possible
+            try {
+              final Map<String, dynamic> testData = Map<String, dynamic>.from(results[i]);
+              fitnessTests.add(testData);
+              print('DEBUG: Successfully converted and parsed fitness test $i');
+            } catch (conversionError) {
+              print('DEBUG: Failed to convert item $i to Map: $conversionError');
+              continue; // Skip this item and continue with others
+            }
           }
+        } catch (e, stackTrace) {
+          print('DEBUG: Error parsing fitness test $i: $e');
+          print('DEBUG: Stack trace: $stackTrace');
+          print('DEBUG: Problematic JSON: ${results[i]}');
+          // Continue with other items instead of failing completely
+          continue;
         }
-        
-        return ApiResponse.success(fitnessTests);
-      } else {
-        return ApiResponse.error('Failed to load fitness tests: ${response.statusCode}');
       }
-    } catch (e) {
-      print('DEBUG: Exception in getFitnessTests: $e');
-      return ApiResponse.error('Exception in getFitnessTests: $e');
+      
+      print('DEBUG: Successfully processed ${fitnessTests.length} out of ${results.length} fitness tests');
+      return ApiResponse.success(fitnessTests);
+    } else {
+      print('DEBUG: HTTP error - Status code: ${response.statusCode}');
+      print('DEBUG: Response body: ${response.body}');
+      return ApiResponse.error('Failed to load fitness tests: HTTP ${response.statusCode}');
     }
+  } catch (e, stackTrace) {
+    print('DEBUG: Exception in getFitnessTests: $e');
+    print('DEBUG: Stack trace: $stackTrace');
+    return ApiResponse.error('Exception in getFitnessTests: $e');
   }
+}
 
   Future<Map<String, dynamic>> getBenchmarks(int testId, int age, String gender) async {
     try {

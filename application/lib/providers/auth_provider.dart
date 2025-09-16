@@ -12,7 +12,7 @@ class AuthProvider with ChangeNotifier {
   AthleteProfile? _currentAthlete;
 
   // Django backend URL - Use your Django server IP
-  static const String _baseUrl = 'http://10.136.205.117:8000/api/auth';
+  static const String _baseUrl = 'http://172.27.75.47:8000/api/auth';
 
   // Getters
   bool get isAuthenticated => _isAuthenticated;
@@ -166,7 +166,7 @@ class AuthProvider with ChangeNotifier {
   Future<bool> testConnection() async {
     try {
       final response = await http.get(
-        Uri.parse('http://10.136.205.117:8000/health/'),
+        Uri.parse('http://172.27.75.47:8000/health/'),
         headers: {'Content-Type': 'application/json'},
       );
       

@@ -30,7 +30,7 @@ DEBUG = True
 ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost', 
-    '10.136.205.117',
+    '172.27.75.47',
     '0.0.0.0',  
 ]
 
@@ -38,7 +38,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Flutter web
     "http://127.0.0.1:3000",
     "http://0.0.0.0:8000",
-    "http://10.136.205.117:8000"
+    "http://172.27.75.47:8000"
 ]
 
 # For development, you might want to allow all origins
