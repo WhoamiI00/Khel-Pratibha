@@ -13,11 +13,22 @@ import 'screens/assessment_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/connection_test_screen.dart';
 import 'screens/jwt_token_test.dart';
+import 'screens/media_upload_screen.dart';
+import 'services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   print('🚀 Starting KhelPratibha App...');
+  // Ensure Supabase is initialized before any widget uses it (e.g., media upload)
+  try {
+    await SupabaseService.initialize();
+  } catch (e) {
+    // Don't crash the app; log and continue. Media features may be limited until fixed.
+    // You can surface a snackbar/banner later if needed.
+    // ignore: avoid_print
+    print('Supabase init failed: $e');
+  }
   
   runApp(const KhelPratibhaApp());
 }
@@ -73,6 +84,7 @@ class KhelPratibhaApp extends StatelessWidget {
           '/leaderboard': (context) => const LeaderboardScreen(),
           '/connection_test': (context) => const ConnectionTestScreen(),
           '/jwt_test': (context) => const JwtTokenTest(),
+          '/media_upload': (context) => const MediaUploadScreen(),
         },
       ),
     );

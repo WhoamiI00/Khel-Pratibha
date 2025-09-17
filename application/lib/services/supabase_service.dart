@@ -10,7 +10,18 @@ class SupabaseService {
   static const String supabaseUrl = 'https://pxtsrcoyesqbarlzmqmt.supabase.co';
   static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4dHNyY295ZXNxYmFybHptcW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwNDk5OTAsImV4cCI6MjA3MjYyNTk5MH0.hx_1FyOiKDJejonredZCAfY08b-qbKkZJnAAMpI7Tqg';
 
-  SupabaseClient get client => Supabase.instance.client;
+  SupabaseClient? _cachedClient;
+
+  // Get a Supabase client. If Supabase.initialize has not run yet,
+  // fall back to creating a direct client so storage/DB calls still work.
+  SupabaseClient get client {
+    try {
+      return Supabase.instance.client;
+    } catch (_) {
+      _cachedClient ??= SupabaseClient(supabaseUrl, supabaseAnonKey);
+      return _cachedClient!;
+    }
+  }
 
   // Initialize Supabase
   static Future<void> initialize() async {

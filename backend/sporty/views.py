@@ -81,6 +81,7 @@ class AthleteProfileViewSet(viewsets.ModelViewSet):
         except Badge.DoesNotExist:
             pass
 
+import pprint
 class FitnessTestViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = FitnessTest.objects.filter(is_active=True)
     serializer_class = FitnessTestSerializer
@@ -99,112 +100,133 @@ class FitnessTestViewSet(viewsets.ReadOnlyModelViewSet):
             gender=gender
         ).first()
         
+        pprint(AgeBenchmarkSerializer(benchmark).data)
+        print(AgeBenchmarkSerializer(benchmark).data)
         if benchmark:
             return Response(AgeBenchmarkSerializer(benchmark).data)
         
         return Response({'error': 'No benchmark found for this age/gender combination'}, 
                        status=status.HTTP_404_NOT_FOUND)
 
+
 class AssessmentSessionViewSet(viewsets.ModelViewSet):
     queryset = AssessmentSession.objects.all()
     serializer_class = AssessmentSessionSerializer
-    
+
     def get_queryset(self):
-        # Check authentication
+        print("DEBUG: get_queryset called")
+        print(f"DEBUG: User authenticated? {getattr(self.request, 'is_authenticated', False)}")
+        print(f"DEBUG: User role: {getattr(self.request, 'user_role', 'authenticated')}")
+        print(f"DEBUG: User ID: {getattr(self.request, 'user_id', None)}")
+
         if not getattr(self.request, 'is_authenticated', False):
+            print("DEBUG: Returning empty queryset (unauthenticated)")
             return AssessmentSession.objects.none()
-            
-        # Filter by athlete for regular users
+
         user_role = getattr(self.request, 'user_role', 'authenticated')
         if user_role != 'sai_official':
+            print("DEBUG: Returning sessions filtered by athlete")
+            print(AssessmentSession.objects.all())
             return AssessmentSession.objects.filter(athlete__auth_user_id=self.request.user_id)
+
+        print("DEBUG: Returning all sessions (SAI official)")
         return AssessmentSession.objects.all()
-    
+
     @action(detail=False, methods=['post'])
     def start_assessment(self, request):
-        """Start a new assessment session"""
+        print("DEBUG: start_assessment API called")
+        print(f"DEBUG: Request data: {request.data}")
+
         if not getattr(self.request, 'is_authenticated', False):
+            print("DEBUG: Authentication failed")
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+
         try:
             athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
-            
-            # Check if there's an ongoing session
+            print(f"DEBUG: Athlete found: {athlete}")
+
             ongoing_session = AssessmentSession.objects.filter(
                 athlete=athlete,
                 status__in=['created', 'in_progress']
             ).first()
-            
+
             if ongoing_session:
+                print(f"DEBUG: Ongoing session found: {ongoing_session.id}")
                 return Response({
                     'session_id': ongoing_session.id,
                     'message': 'Continuing existing assessment session',
                     'status': ongoing_session.status,
                     'progress': f"{ongoing_session.completed_tests}/{ongoing_session.total_tests}"
                 })
-            
-            # Create new session
+
+            total_tests = FitnessTest.objects.filter(is_active=True).count()
             session = AssessmentSession.objects.create(
                 athlete=athlete,
                 session_name=f"Assessment {datetime.now().strftime('%Y-%m-%d %H:%M')}",
                 status='created',
-                total_tests=FitnessTest.objects.filter(is_active=True).count(),
+                total_tests=total_tests,
                 device_info=request.data.get('device_info', {})
             )
-            
+            print(f"DEBUG: New session created: {session.id}")
+
             return Response({
                 'session_id': session.id,
                 'message': 'New assessment session started',
                 'total_tests': session.total_tests,
                 'available_tests': list(FitnessTest.objects.filter(is_active=True).values('id', 'name', 'display_name'))
             }, status=status.HTTP_201_CREATED)
-            
+
         except AthleteProfile.DoesNotExist:
+            print("DEBUG: Athlete profile not found")
             return Response({'error': 'Athlete profile not found'}, status=status.HTTP_404_NOT_FOUND)
-    
+
     @action(detail=True, methods=['post'])
     def submit_to_sai(self, request, pk=None):
-        """Submit completed assessment to SAI for official review"""
+        print(f"DEBUG: submit_to_sai API called for session ID {pk}")
         session = self.get_object()
-        
+        print(f"DEBUG: Session status: {session.status}")
+
         if session.status != 'completed':
-            return Response({'error': 'Assessment must be completed before submission'}, 
-                           status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check if already submitted
+            print("DEBUG: Session not completed, cannot submit")
+            return Response({'error': 'Assessment must be completed before submission'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
         existing_submission = SAISubmission.objects.filter(assessment_session=session).first()
         if existing_submission:
+            print(f"DEBUG: Existing submission found: {existing_submission.sai_reference_id}")
             return Response({
                 'sai_reference_id': existing_submission.sai_reference_id,
                 'message': 'Already submitted to SAI',
                 'status': existing_submission.status
             })
-        
-        # Create SAI submission
+
         submission = SAISubmission.objects.create(
             assessment_session=session,
             athlete=session.athlete,
             sai_reference_id=f"SAI{datetime.now().strftime('%Y%m%d')}{str(uuid.uuid4())[:8].upper()}",
             submitted_data=self.prepare_sai_submission_data(session)
         )
-        
+        print(f"DEBUG: New submission created: {submission.sai_reference_id}")
+
         session.status = 'submitted_to_sai'
         session.submitted_at = timezone.now()
         session.save()
-        
-        # Award submission badge
+        print("DEBUG: Session updated to submitted_to_sai")
+
         self.award_submission_badge(session.athlete)
-        
+        print("DEBUG: Badge awarding attempted")
+
         return Response({
             'sai_reference_id': submission.sai_reference_id,
             'message': 'Successfully submitted to SAI for review',
             'estimated_review_time': '5-7 business days'
         })
-    
+
     def prepare_sai_submission_data(self, session):
-        """Prepare comprehensive data for SAI submission"""
+        print(f"DEBUG: Preparing SAI submission data for session ID {session.id}")
         recordings = TestRecording.objects.filter(session=session, processing_status='completed')
-        
+        print(f"DEBUG: Recordings count: {recordings.count()}")
+
         return {
             'athlete_info': AthleteProfileSerializer(session.athlete).data,
             'session_summary': {
@@ -233,13 +255,15 @@ class AssessmentSessionViewSet(viewsets.ModelViewSet):
                 'device_info': session.device_info
             }
         }
-    
+
     def award_submission_badge(self, athlete):
-        """Award badge for SAI submission"""
+        print(f"DEBUG: Attempting to award submission badge to athlete {athlete}")
         try:
             submission_badge = Badge.objects.get(name='First SAI Submission')
             AthleteBadge.objects.get_or_create(athlete=athlete, badge=submission_badge)
+            print("DEBUG: Badge awarded or already exists")
         except Badge.DoesNotExist:
+            print("DEBUG: Badge 'First SAI Submission' does not exist")
             pass
 
 class TestRecordingViewSet(viewsets.ModelViewSet):

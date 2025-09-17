@@ -165,6 +165,7 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
     );
   }
 
+  
   String _formatTime(int seconds) {
     final minutes = seconds ~/ 60;
     final remainingSeconds = seconds % 60;
@@ -220,8 +221,43 @@ class _AssessmentScreenState extends State<AssessmentScreen> with SingleTickerPr
           }
 
           if (assessmentProvider.fitnessTests.isEmpty) {
-            return const Center(
-              child: Text('No fitness tests available'),
+            // Empty-state: Show a friendly message and Add Videos button
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(Icons.fitness_center, size: 64, color: Colors.orange.shade300),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No tests available right now',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'You can still upload your practice videos and photos for review.',
+                    style: TextStyle(color: Colors.grey[700]),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/media_upload');
+                    },
+                    icon: const Icon(Icons.video_library),
+                    label: const Text('Add Videos'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      assessmentProvider.loadFitnessTests();
+                    },
+                    child: const Text('Refresh tests'),
+                  ),
+                ],
+              ),
             );
           }
 

@@ -141,6 +141,7 @@ class AssessmentProvider extends ChangeNotifier {
       final result = await _apiService.getAssessmentSessions();
       
       print('DEBUG: AssessmentProvider - Sessions result: ${result['success']}');
+      print('DEBUG: AssessmentProvider - Sessions result: ${result['success']}');
       
       if (result['success']) {
         final data = result['data'];

@@ -451,11 +451,32 @@ Future<ApiResponse<List<Map<String, dynamic>>>> getFitnessTests() async {
         Uri.parse('$baseUrl/assessment-sessions/'),
         headers: authHeaders,
       );
-
+      print(response);
+      print(response.headers);
+      print(response.body);
       final data = jsonDecode(response.body);
+      print('DEBUG: getAssessmentSessions data type: ${data.runtimeType}');
       
       if (response.statusCode == 200) {
-        return {'success': true, 'data': data['results']};
+        // Support both list response and paginated { results: [...] } response
+        List<dynamic> results;
+        if (data is List) {
+          results = data;
+        } else if (data is Map && data.containsKey('results')) {
+          final res = data['results'];
+          if (res is List) {
+            results = res;
+          } else {
+            // Unexpected shape, treat as empty list to avoid runtime errors
+            results = const [];
+          }
+        } else {
+          // Unknown shape, log and treat as empty
+          print('DEBUG: Unexpected sessions response shape: ${data.runtimeType}');
+          results = const [];
+        }
+
+        return {'success': true, 'data': results};
       } else {
         return {'success': false, 'error': data};
       }

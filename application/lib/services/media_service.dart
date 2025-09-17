@@ -11,7 +11,7 @@ class MediaService {
   
   MediaService._();
 
-  final SupabaseClient _client = SupabaseService.instance.client;
+  SupabaseClient get _client => SupabaseService.instance.client;
   final String _bucketName = 'content';
 
   /// Upload image or video to Supabase storage
