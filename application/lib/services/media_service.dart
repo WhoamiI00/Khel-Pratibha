@@ -1,8 +1,10 @@
 import 'dart:io';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/media_item.dart';
+import 'api_service.dart';
 import 'supabase_service.dart';
 
 class MediaService {
@@ -11,58 +13,178 @@ class MediaService {
   
   MediaService._();
 
-  SupabaseClient get _client => SupabaseService.instance.client;
-  final String _bucketName = 'content';
+  final ApiService _apiService = ApiService();
 
-  /// Upload image or video to Supabase storage
-  Future<Map<String, String>?> uploadMedia({
+  /// Upload video for exercise analysis - with Supabase storage and fallback
+  Future<Map<String, dynamic>?> uploadVideoForAnalysis({
     required File file,
-    required String mediaType, // 'image' or 'video'
-    String? userId,
+    required String exerciseType,
+    double? duration,
   }) async {
     try {
-      final String fileName = _generateFileName(file.path, mediaType);
-      final String filePath = '${userId ?? 'anonymous'}/$fileName';
-
-      // Upload file to Supabase storage
-      await _client.storage
-          .from(_bucketName)
-          .upload(filePath, file);
-
-      // Get public URL
-      final String publicUrl = _client.storage
-          .from(_bucketName)
-          .getPublicUrl(filePath);
-
-      String? thumbnailUrl;
+      print('Uploading video for analysis: $exerciseType');
       
-      // Generate and upload thumbnail for videos
-      if (mediaType == 'video') {
-        final File? thumbnailFile = await generateVideoThumbnail(file);
-        if (thumbnailFile != null) {
-          final String thumbnailFileName = _generateFileName(thumbnailFile.path, 'thumbnail');
-          final String thumbnailFilePath = '${userId ?? 'anonymous'}/thumbnails/$thumbnailFileName';
-          
-          await _client.storage
-              .from(_bucketName)
-              .upload(thumbnailFilePath, thumbnailFile);
-              
-          thumbnailUrl = _client.storage
-              .from(_bucketName)
-              .getPublicUrl(thumbnailFilePath);
-              
-          // Clean up temporary thumbnail file
-          await thumbnailFile.delete();
-        }
+      String? publicUrl;
+      
+      // Step 1: Try to upload video to Supabase 'content' bucket
+      try {
+        final supabaseService = SupabaseService.instance;
+        final fileName = 'exercise_videos/${DateTime.now().millisecondsSinceEpoch}_${exerciseType}.mp4';
+        
+        print('Attempting upload to Supabase content bucket: $fileName');
+        
+        final bytes = await file.readAsBytes();
+        
+        // Try uploading with timeout
+        await supabaseService.client.storage
+            .from('content')
+            .uploadBinary(fileName, bytes)
+            .timeout(Duration(seconds: 30));
+        
+        // Get public URL from Supabase
+        publicUrl = supabaseService.client.storage
+            .from('content')
+            .getPublicUrl(fileName);
+        
+        print('✅ Video uploaded to Supabase successfully: $publicUrl');
+        
+      } catch (supabaseError) {
+        print('⚠️ Supabase upload failed: $supabaseError');
+        print('Falling back to direct Django upload...');
+        publicUrl = null;
+      }
+      
+      // Step 2: Send to Django backend (either with Supabase URL or file)
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${_apiService.baseUrl}/exercise-uploads/upload_video/'),
+      );
+
+      // Add headers
+      request.headers.addAll(_apiService.authHeaders);
+
+      // Add form fields
+      request.fields['exercise_type'] = exerciseType;
+      if (duration != null) {
+        request.fields['duration'] = duration.toString();
+      }
+      
+      if (publicUrl != null) {
+        // Use Supabase URL
+        request.fields['video_url'] = publicUrl;
+        print('Sending Supabase video URL to Django backend...');
+      } else {
+        // Fallback: send file directly to Django
+        final videoFile = await http.MultipartFile.fromPath(
+          'video_file',
+          file.path,
+        );
+        request.files.add(videoFile);
+        print('Sending video file directly to Django backend...');
       }
 
-      print('Media uploaded successfully: $publicUrl');
-      return {
-        'mediaUrl': publicUrl,
-        'thumbnailUrl': thumbnailUrl ?? '',
-      };
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+      
+      print('Response status: ${response.statusCode}');
+      print('Response body: $responseBody');
+
+      if (response.statusCode == 201) {
+        final result = json.decode(responseBody);
+        print('✅ Video uploaded and analyzed successfully');
+        return result;
+      } else {
+        print('❌ Django upload failed with status: ${response.statusCode}');
+        print('Error: $responseBody');
+        return null;
+      }
     } catch (e) {
-      print('Error uploading media: $e');
+      print('❌ Error uploading video: $e');
+      return null;
+    }
+  }
+
+  /// Upload image for exercise analysis - with Supabase storage and fallback
+  Future<Map<String, dynamic>?> uploadImageForAnalysis({
+    required File file,
+    required String exerciseType,
+  }) async {
+    try {
+      print('Uploading image for analysis: $exerciseType');
+      
+      String? publicUrl;
+      
+      // Step 1: Try to upload image to Supabase 'content' bucket
+      try {
+        final supabaseService = SupabaseService.instance;
+        final fileName = 'exercise_images/${DateTime.now().millisecondsSinceEpoch}_${exerciseType}.jpg';
+        
+        print('Attempting upload to Supabase content bucket: $fileName');
+        
+        final bytes = await file.readAsBytes();
+        
+        // Try uploading with timeout
+        await supabaseService.client.storage
+            .from('content')
+            .uploadBinary(fileName, bytes)
+            .timeout(Duration(seconds: 30));
+        
+        // Get public URL from Supabase
+        publicUrl = supabaseService.client.storage
+            .from('content')
+            .getPublicUrl(fileName);
+        
+        print('✅ Image uploaded to Supabase successfully: $publicUrl');
+        
+      } catch (supabaseError) {
+        print('⚠️ Supabase upload failed: $supabaseError');
+        print('Falling back to direct Django upload...');
+        publicUrl = null;
+      }
+      
+      // Step 2: Send to Django backend (either with Supabase URL or file)
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${_apiService.baseUrl}/exercise-uploads/upload_image/'),
+      );
+
+      // Add headers
+      request.headers.addAll(_apiService.authHeaders);
+
+      // Add form fields
+      request.fields['exercise_type'] = exerciseType;
+      
+      if (publicUrl != null) {
+        // Use Supabase URL
+        request.fields['image_url'] = publicUrl;
+        print('Sending Supabase image URL to Django backend...');
+      } else {
+        // Fallback: send file directly to Django
+        final imageFile = await http.MultipartFile.fromPath(
+          'image_file',
+          file.path,
+        );
+        request.files.add(imageFile);
+        print('Sending image file directly to Django backend...');
+      }
+
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+      
+      print('Response status: ${response.statusCode}');
+      print('Response body: $responseBody');
+
+      if (response.statusCode == 201) {
+        final result = json.decode(responseBody);
+        print('✅ Image uploaded and analyzed successfully');
+        return result;
+      } else {
+        print('❌ Django upload failed with status: ${response.statusCode}');
+        print('Error: $responseBody');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error uploading image: $e');      
       return null;
     }
   }
@@ -94,46 +216,77 @@ class MediaService {
     }
   }
 
-  /// Save media record to database
-  Future<bool> saveMediaRecord({
-    required String url,
-    required String mediaType,
-    required String fileName,
-    String? thumbnailUrl,
-    String? userId,
-  }) async {
+  /// Get analysis results for a specific upload
+  Future<Map<String, dynamic>?> getAnalysisResults(int uploadId) async {
     try {
-      await _client.from('media_uploads').insert({
-        'user_id': userId,
-        'media_url': url,
-        'media_type': mediaType,
-        'file_name': fileName,
-        'thumbnail_url': thumbnailUrl,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      final response = await http.get(
+        Uri.parse('${_apiService.baseUrl}/exercise-uploads/$uploadId/get_analysis/'),
+        headers: _apiService.authHeaders,
+      );
 
-      print('Media record saved successfully');
-      return true;
+      print('Analysis results response: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Failed to get analysis results: ${response.statusCode}');
+        return null;
+      }
     } catch (e) {
-      print('Error saving media record: $e');
-      return false;
+      print('Error getting analysis results: $e');
+      return null;
     }
   }
 
-  /// Get user's media history
+  /// Get all uploads for the current user
+  Future<List<Map<String, dynamic>>> getMyUploads() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${_apiService.baseUrl}/exercise-uploads/my_uploads/'),
+        headers: _apiService.authHeaders,
+      );
+
+      print('My uploads response: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return List<Map<String, dynamic>>.from(data['uploads'] ?? []);
+      } else {
+        print('Failed to get uploads: ${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      print('Error getting uploads: $e');
+      return [];
+    }
+  }
+
+  /// Get user's media history from Django backend
   Future<List<MediaItem>> getUserMediaHistory(String? userId) async {
     try {
-      final response = await _client
-          .from('media_uploads')
-          .select()
-          .eq('user_id', userId ?? 'anonymous')
-          .order('created_at', ascending: false);
-
-      final List<MediaItem> mediaItems = [];
-      for (final item in response) {
-        mediaItems.add(MediaItem.fromJson(item));
+      final uploads = await getMyUploads();
+      
+      // Convert Django upload format to MediaItem format
+      List<MediaItem> mediaItems = [];
+      for (final upload in uploads) {
+        final mediaItem = MediaItem(
+          id: upload['id'].toString(),
+          userId: userId,
+          mediaUrl: 'exercise_upload_${upload['id']}', // Placeholder URL
+          mediaType: upload['video_duration'] != null && upload['video_duration'] > 0 ? 'video' : 'image',
+          fileName: '${upload['exercise_type']}_${upload['id']}.${upload['video_duration'] != null ? 'mp4' : 'jpg'}',
+          thumbnailUrl: null,
+          createdAt: DateTime.parse(upload['uploaded_at']),
+          fileSizeBytes: upload['file_size_mb'] != null 
+              ? (upload['file_size_mb'] * 1024 * 1024).round() 
+              : null,
+          description: 'Exercise: ${upload['exercise_type']}',
+        );
+        mediaItems.add(mediaItem);
       }
-
+      
       return mediaItems;
     } catch (e) {
       print('Error fetching media history: $e');
@@ -141,50 +294,50 @@ class MediaService {
     }
   }
 
-  /// Delete media from storage and database
+  /// Delete media from Django backend
   Future<bool> deleteMedia({
     required String mediaId,
     required String mediaUrl,
     String? userId,
   }) async {
     try {
-      // Extract file path from URL
-      final Uri uri = Uri.parse(mediaUrl);
-      final String filePath = uri.pathSegments.skip(5).join('/'); // Skip /storage/v1/object/public/{bucket}/
+      // Extract upload ID from mediaUrl or mediaId
+      String uploadId = mediaId;
+      if (mediaUrl.startsWith('exercise_upload_')) {
+        uploadId = mediaUrl.replaceFirst('exercise_upload_', '');
+      }
 
-      // Delete from storage
-      await _client.storage
-          .from(_bucketName)
-          .remove([filePath]);
+      final response = await http.delete(
+        Uri.parse('${_apiService.baseUrl}/exercise-uploads/$uploadId/'),
+        headers: _apiService.authHeaders,
+      );
 
-      // Delete from database
-      await _client
-          .from('media_uploads')
-          .delete()
-          .eq('id', mediaId);
+      print('Delete response: ${response.statusCode}');
+      print('Delete response body: ${response.body}');
 
-      print('Media deleted successfully');
-      return true;
+      if (response.statusCode == 204 || response.statusCode == 200) {
+        print('Media deleted successfully');
+        return true;
+      } else {
+        print('Failed to delete media: ${response.statusCode}');
+        return false;
+      }
     } catch (e) {
       print('Error deleting media: $e');
       return false;
     }
   }
 
-  /// Generate unique filename
-  String _generateFileName(String originalPath, String mediaType) {
-    final String extension = originalPath.split('.').last;
-    final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-    return '${mediaType}_$timestamp.$extension';
-  }
-
-  /// Check if storage bucket exists and is accessible
-  Future<bool> checkStorageAccess() async {
+  /// Check if backend connection is working
+  Future<bool> checkBackendConnection() async {
     try {
-      await _client.storage.listBuckets();
-      return true;
+      final response = await http.get(
+        Uri.parse('${_apiService.baseUrl}/health/'),
+        headers: _apiService.headers,
+      );
+      return response.statusCode == 200;
     } catch (e) {
-      print('Storage access check failed: $e');
+      print('Backend connection check failed: $e');
       return false;
     }
   }

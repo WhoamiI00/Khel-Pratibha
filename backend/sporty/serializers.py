@@ -161,3 +161,43 @@ class DeviceCapabilitySerializer(serializers.Serializer):
     network_speed_mbps = serializers.DecimalField(max_digits=6, decimal_places=2)
     recommended_quality = serializers.CharField()
     offline_analysis_supported = serializers.BooleanField()
+
+class ExerciseUploadSerializer(serializers.ModelSerializer):
+    """Serializer for exercise uploads with dummy analysis"""
+    athlete_name = serializers.CharField(source='athlete.full_name', read_only=True)
+    analysis_summary = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ExerciseUpload
+        fields = '__all__'
+        read_only_fields = ('id', 'athlete', 'uploaded_at', 'processed_at', 'analysis_results')
+    
+    def get_analysis_summary(self, obj):
+        """Get a summary of the analysis results"""
+        if obj.analysis_results and obj.status == 'completed':
+            results = obj.analysis_results
+            return {
+                'overall_score': results.get('overall_score'),
+                'performance_level': results.get('performance_level'),
+                'repetitions_count': results.get('repetitions_count'),
+                'form_quality': results.get('form_quality', {}).get('overall_rating') if results.get('form_quality') else None,
+                'recommendations_count': len(results.get('recommendations', []))
+            }
+        return None
+
+class ExerciseUploadRequestSerializer(serializers.Serializer):
+    """Serializer for exercise upload request validation"""
+    exercise_type = serializers.ChoiceField(choices=ExerciseUpload.EXERCISE_CHOICES)
+    video_file = serializers.FileField(required=False)
+    image_file = serializers.ImageField(required=False)
+    duration = serializers.FloatField(required=False, default=0.0)
+    
+    def validate(self, data):
+        """Ensure either video_file or image_file is provided"""
+        if not data.get('video_file') and not data.get('image_file'):
+            raise serializers.ValidationError("Either video_file or image_file must be provided")
+        
+        if data.get('video_file') and data.get('image_file'):
+            raise serializers.ValidationError("Provide either video_file or image_file, not both")
+        
+        return data

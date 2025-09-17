@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/media_service.dart';
-import '../services/supabase_service.dart';
 
 class MediaUploadWidget extends StatefulWidget {
   final Function(String mediaUrl, String mediaType)? onMediaUploaded;
@@ -223,44 +222,58 @@ class _MediaUploadWidgetState extends State<MediaUploadWidget> {
     widget.onUploadStarted?.call();
 
     try {
+      // First, show exercise type selection dialog
+      final String? exerciseType = await _showExerciseTypeDialog();
+      if (exerciseType == null) {
+        setState(() {
+          _isUploading = false;
+          _uploadProgress = 0.0;
+        });
+        return; // User cancelled
+      }
+
       // Simulate progress updates
-      for (int i = 0; i <= 100; i += 10) {
+      for (int i = 0; i <= 50; i += 10) {
         await Future.delayed(const Duration(milliseconds: 100));
         setState(() {
           _uploadProgress = i / 100;
         });
       }
 
-      // Get current user ID
-      final String? userId = SupabaseService.instance.currentUser?.id;
-
-      // Upload to Supabase storage
-      final Map<String, String>? uploadResult = await _mediaService.uploadMedia(
-        file: file,
-        mediaType: mediaType,
-        userId: userId,
-      );
-
-      if (uploadResult != null && uploadResult['mediaUrl'] != null) {
-        final String mediaUrl = uploadResult['mediaUrl']!;
-        final String? thumbnailUrl = uploadResult['thumbnailUrl']!.isNotEmpty 
-            ? uploadResult['thumbnailUrl'] 
-            : null;
-        
-        // Save media record to database
-        final fileName = file.path.split('/').last;
-        await _mediaService.saveMediaRecord(
-          url: mediaUrl,
-          mediaType: mediaType,
-          fileName: fileName,
-          thumbnailUrl: thumbnailUrl,
-          userId: userId,
+      Map<String, dynamic>? uploadResult;
+      
+      if (mediaType == 'video') {
+        // Upload video for analysis using Django backend
+        uploadResult = await _mediaService.uploadVideoForAnalysis(
+          file: file,
+          exerciseType: exerciseType,
+          duration: null, // Duration will be calculated by backend
         );
-
-        widget.onMediaUploaded?.call(mediaUrl, mediaType);
-        _showSuccessSnackBar('${mediaType == 'image' ? 'Image' : 'Video'} uploaded successfully!');
       } else {
-        throw Exception('Failed to upload media');
+        // Upload image for analysis using Django backend
+        uploadResult = await _mediaService.uploadImageForAnalysis(
+          file: file,
+          exerciseType: exerciseType,
+        );
+      }
+
+      // Complete progress
+      setState(() {
+        _uploadProgress = 1.0;
+      });
+
+      if (uploadResult != null && uploadResult['success'] == true) {
+        // Show analysis results in a dialog
+        await _showAnalysisResultsDialog(uploadResult);
+        
+        widget.onMediaUploaded?.call(
+          'upload_${uploadResult['upload_id']}', 
+          mediaType
+        );
+        _showSuccessSnackBar('${mediaType == 'image' ? 'Image' : 'Video'} uploaded and analyzed successfully!');
+      } else {
+        final errorMessage = uploadResult?['error'] ?? 'Unknown error occurred';
+        throw Exception(errorMessage);
       }
     } catch (e) {
       print('Error uploading media: $e');
@@ -272,6 +285,129 @@ class _MediaUploadWidgetState extends State<MediaUploadWidget> {
         _uploadProgress = 0.0;
       });
     }
+  }
+
+  Future<String?> _showExerciseTypeDialog() async {
+    final exercises = [
+      {'value': 'pushup', 'display': 'Push-up'},
+      {'value': 'squat', 'display': 'Squat'},
+      {'value': 'plank', 'display': 'Plank'},
+      {'value': 'pull_ups', 'display': 'Pull-ups'},
+      {'value': 'sit_ups', 'display': 'Sit-ups'},
+      {'value': 'jumping_jacks', 'display': 'Jumping Jacks'},
+      {'value': 'lunges', 'display': 'Lunges'},
+      {'value': 'burpees', 'display': 'Burpees'},
+      {'value': 'mountain_climbers', 'display': 'Mountain Climbers'},
+      {'value': 'high_knees', 'display': 'High Knees'},
+    ];
+
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Exercise Type'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: exercises.length,
+              itemBuilder: (context, index) {
+                final exercise = exercises[index];
+                return ListTile(
+                  title: Text(exercise['display']!),
+                  onTap: () {
+                    Navigator.of(context).pop(exercise['value']);
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showAnalysisResultsDialog(Map<String, dynamic> results) async {
+    final analysisResults = results['analysis_results'] as Map<String, dynamic>?;
+    
+    if (analysisResults == null) {
+      return;
+    }
+
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Analysis Results - ${results['exercise_type'] ?? 'Exercise'}'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildResultItem('Overall Score', '${analysisResults['overall_score']}/100'),
+                _buildResultItem('Performance Level', analysisResults['performance_level'] ?? 'N/A'),
+                _buildResultItem('Repetitions', '${analysisResults['repetitions_count'] ?? 0}'),
+                
+                if (analysisResults['form_quality'] != null) ...[
+                  const SizedBox(height: 16),
+                  const Text('Form Quality:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  _buildResultItem('Overall Rating', analysisResults['form_quality']['overall_rating'] ?? 'N/A'),
+                  _buildResultItem('Posture', analysisResults['form_quality']['posture'] ?? 'N/A'),
+                  _buildResultItem('Range of Motion', analysisResults['form_quality']['range_of_motion'] ?? 'N/A'),
+                ],
+                
+                if (analysisResults['recommendations'] != null && 
+                    (analysisResults['recommendations'] as List).isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text('Recommendations:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ...(analysisResults['recommendations'] as List).map(
+                    (rec) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('• $rec', style: const TextStyle(fontSize: 14)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildResultItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showPermissionDeniedDialog(String permission) {

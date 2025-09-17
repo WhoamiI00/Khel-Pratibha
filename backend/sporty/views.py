@@ -697,6 +697,270 @@ class SAISubmissionViewSet(viewsets.ReadOnlyModelViewSet):
         })
 
 # Utility Views
+class ExerciseUploadViewSet(viewsets.ModelViewSet):
+    """Handle exercise video/image uploads with dummy analysis"""
+    queryset = ExerciseUpload.objects.all()
+    serializer_class = ExerciseUploadSerializer
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def get_queryset(self):
+        """Filter uploads by authenticated user"""
+        if not getattr(self.request, 'is_authenticated', False):
+            return ExerciseUpload.objects.none()
+        
+        # Athletes see only their uploads, SAI officials see all
+        user_role = getattr(self.request, 'user_role', 'authenticated')
+        if user_role == 'sai_official':
+            return ExerciseUpload.objects.all()
+        
+        # Filter by athlete profile
+        try:
+            athlete = AthleteProfile.objects.get(auth_user_id=self.request.user_id)
+            return ExerciseUpload.objects.filter(athlete=athlete)
+        except AthleteProfile.DoesNotExist:
+            return ExerciseUpload.objects.none()
+    
+    @action(detail=False, methods=['post'])
+    def upload_video(self, request):
+        """Handle video upload for exercise analysis"""
+        print(f"DEBUG: Exercise video upload API called")
+        print(f"REQUEST DATA: {request.data}")
+        
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({
+                'success': False,
+                'error': 'Authentication required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            # Get athlete profile
+            athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
+            print(f"DEBUG: Athlete found: {athlete.full_name}")
+            
+            # Extract data from request
+            exercise_type = request.data.get('exercise_type')
+            video_url = request.data.get('video_url')  # From Supabase
+            video_file = request.FILES.get('video_file')  # Fallback file upload
+            duration = request.data.get('duration', 0)
+            
+            if not exercise_type or (not video_url and not video_file):
+                return Response({
+                    'success': False,
+                    'error': 'exercise_type and either video_url or video_file are required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate exercise type
+            valid_exercises = [choice[0] for choice in ExerciseUpload.EXERCISE_CHOICES]
+            if exercise_type not in valid_exercises:
+                return Response({
+                    'success': False,
+                    'error': f'Invalid exercise_type. Must be one of: {valid_exercises}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Handle video URL (Supabase) or file upload (fallback)
+            final_url = video_url
+            if not video_url and video_file:
+                print(f"DEBUG: Using fallback file upload for video")
+                # Save file locally as fallback
+                file_name = f"exercise_videos/{athlete.id}_{uuid.uuid4()}.mp4"
+                file_path = default_storage.save(file_name, video_file)
+                final_url = f"http://172.27.75.222:8000/media/{file_path}"
+            else:
+                print(f"DEBUG: Using Supabase video URL: {video_url}")
+            
+            # Create exercise upload record
+            exercise_upload = ExerciseUpload.objects.create(
+                athlete=athlete,
+                exercise_type=exercise_type,
+                video_url=final_url,
+                duration=float(duration) if duration else 0.0
+            )
+            
+            print(f"DEBUG: Exercise upload created with ID: {exercise_upload.id}")
+            
+            # Generate dummy analysis immediately
+            exercise_upload.generate_dummy_analysis()
+            
+            print(f"DEBUG: Dummy analysis generated successfully")
+            
+            return Response({
+                'success': True,
+                'message': 'Video uploaded and analyzed successfully',
+                'upload_id': exercise_upload.id,
+                'exercise_type': exercise_type,
+                'video_url': video_url,
+                'repetitions_count': exercise_upload.repetitions_count,
+                'form_score': exercise_upload.form_score,
+                'duration': exercise_upload.duration,
+                'calories_burned': exercise_upload.calories_burned,
+                'is_analyzed': exercise_upload.is_analyzed
+            }, status=status.HTTP_201_CREATED)
+            
+        except AthleteProfile.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Athlete profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            print(f"DEBUG: Error in upload_video: {str(e)}")
+            return Response({
+                'success': False,
+                'error': f'Upload failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['post'])
+    def upload_image(self, request):
+        """Handle image upload for exercise analysis"""
+        print(f"DEBUG: Exercise image upload API called")
+        
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({
+                'success': False,
+                'error': 'Authentication required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            # Get athlete profile
+            athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
+            
+            # Extract data from request
+            exercise_type = request.data.get('exercise_type')
+            image_url = request.data.get('image_url')  # From Supabase
+            image_file = request.FILES.get('image_file')  # Fallback file upload
+            
+            if not exercise_type or (not image_url and not image_file):
+                return Response({
+                    'success': False,
+                    'error': 'exercise_type and either image_url or image_file are required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate exercise type
+            valid_exercises = [choice[0] for choice in ExerciseUpload.EXERCISE_CHOICES]
+            if exercise_type not in valid_exercises:
+                return Response({
+                    'success': False,
+                    'error': f'Invalid exercise_type. Must be one of: {valid_exercises}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Handle image URL (Supabase) or file upload (fallback)
+            final_url = image_url
+            if not image_url and image_file:
+                print(f"DEBUG: Using fallback file upload for image")
+                # Save file locally as fallback
+                file_name = f"exercise_images/{athlete.id}_{uuid.uuid4()}.jpg"
+                file_path = default_storage.save(file_name, image_file)
+                final_url = f"http://172.27.75.222:8000/media/{file_path}"
+            else:
+                print(f"DEBUG: Using Supabase image URL: {image_url}")
+            
+            # Create exercise upload record
+            exercise_upload = ExerciseUpload.objects.create(
+                athlete=athlete,
+                exercise_type=exercise_type,
+                video_url=final_url  # Store URL in video_url field for both images and videos
+            )
+            
+            # Generate dummy analysis immediately
+            exercise_upload.generate_dummy_analysis()
+            
+            return Response({
+                'success': True,
+                'message': 'Image uploaded and analyzed successfully',
+                'upload_id': exercise_upload.id,
+                'exercise_type': exercise_type,
+                'video_url': image_url,
+                'repetitions_count': exercise_upload.repetitions_count,
+                'form_score': exercise_upload.form_score,
+                'duration': exercise_upload.duration,
+                'calories_burned': exercise_upload.calories_burned,
+                'is_analyzed': exercise_upload.is_analyzed
+            }, status=status.HTTP_201_CREATED)
+            
+        except AthleteProfile.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Athlete profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'Upload failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def get_analysis(self, request, pk=None):
+        """Get analysis results for a specific upload"""
+        try:
+            upload = self.get_object()
+            
+            if upload.status == 'processing':
+                return Response({
+                    'status': 'processing',
+                    'message': 'Analysis in progress...',
+                    'upload_id': upload.id
+                })
+            
+            elif upload.status == 'completed':
+                return Response({
+                    'status': 'completed',
+                    'upload_id': upload.id,
+                    'exercise_type': upload.exercise_type,
+                    'analysis_results': upload.analysis_results,
+                    'processed_at': upload.processed_at.isoformat() if upload.processed_at else None,
+                    'file_size_mb': upload.file_size_mb,
+                    'video_duration': upload.video_duration
+                })
+            
+            else:  # failed
+                return Response({
+                    'status': 'failed',
+                    'message': 'Analysis failed',
+                    'upload_id': upload.id
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+        except ExerciseUpload.DoesNotExist:
+            return Response({
+                'error': 'Upload not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['get'])
+    def my_uploads(self, request):
+        """Get all uploads for the authenticated athlete"""
+        if not getattr(self.request, 'is_authenticated', False):
+            return Response({
+                'error': 'Authentication required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            athlete = AthleteProfile.objects.get(auth_user_id=request.user_id)
+            uploads = ExerciseUpload.objects.filter(athlete=athlete).order_by('-created_at')
+            
+            uploads_data = []
+            for upload in uploads:
+                uploads_data.append({
+                    'id': upload.id,
+                    'exercise_type': upload.exercise_type,
+                    'status': upload.status,
+                    'uploaded_at': upload.created_at.isoformat(),
+                    'processed_at': upload.processed_at.isoformat() if upload.processed_at else None,
+                    'analysis_results': upload.analysis_results if upload.status == 'completed' else None,
+                    'file_size_mb': upload.file_size_mb,
+                    'video_duration': upload.video_duration
+                })
+            
+            return Response({
+                'uploads': uploads_data,
+                'total_count': len(uploads_data)
+            })
+            
+        except AthleteProfile.DoesNotExist:
+            return Response({
+                'error': 'Athlete profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
 class StatsViewSet(viewsets.ViewSet):
     """Platform statistics for dashboard"""
     

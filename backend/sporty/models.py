@@ -99,6 +99,82 @@ class FitnessTest(models.Model):
     class Meta:
         db_table = 'fitness_tests'
 
+class ExerciseUpload(models.Model):
+    """Model for individual exercise video/image uploads with dummy analysis"""
+    EXERCISE_CHOICES = [
+        ('pushup', 'Push-up'),
+        ('squat', 'Squat'),
+        ('plank', 'Plank'),
+        ('jumping_jacks', 'Jumping Jacks'),
+        ('burpees', 'Burpees'),
+        ('lunges', 'Lunges'),
+        ('mountain_climbers', 'Mountain Climbers'),
+        ('high_knees', 'High Knees'),
+        ('sit_ups', 'Sit-ups'),
+        ('pull_ups', 'Pull-ups'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    athlete = models.ForeignKey(AthleteProfile, on_delete=models.CASCADE, related_name='exercise_uploads')
+    exercise_type = models.CharField(max_length=50, choices=EXERCISE_CHOICES)
+    video_file = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
+    video_url = models.URLField(max_length=500, null=True, blank=True)
+    
+    # Analysis results (dummy data for now)
+    repetitions_count = models.IntegerField(default=0)
+    form_score = models.FloatField(default=0.0, help_text="Score from 0-10 for exercise form")
+    duration = models.FloatField(default=0.0, help_text="Duration in seconds")
+    calories_burned = models.FloatField(default=0.0)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_analyzed = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = 'exercise_uploads'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        athlete_name = self.athlete.full_name if self.athlete else 'Unknown'
+        return f"{athlete_name} - {self.exercise_type} - {self.created_at.strftime('%Y-%m-%d')}"
+
+    def generate_dummy_analysis(self):
+        """Generate dummy analysis data until ML model is ready"""
+        import random
+        
+        # Generate realistic dummy data based on exercise type
+        base_data = {
+            'pushup': {'reps': (10, 25), 'form': (6.5, 9.0), 'duration': (30, 90)},
+            'squat': {'reps': (15, 30), 'form': (7.0, 9.5), 'duration': (45, 120)},
+            'plank': {'reps': (1, 1), 'form': (7.5, 9.8), 'duration': (30, 180)},
+            'jumping_jacks': {'reps': (20, 50), 'form': (6.0, 8.5), 'duration': (60, 180)},
+            'burpees': {'reps': (5, 15), 'form': (6.5, 8.8), 'duration': (30, 90)},
+            'lunges': {'reps': (10, 20), 'form': (7.0, 9.0), 'duration': (45, 100)},
+            'mountain_climbers': {'reps': (20, 40), 'form': (6.5, 8.5), 'duration': (30, 90)},
+            'high_knees': {'reps': (30, 60), 'form': (6.0, 8.0), 'duration': (30, 90)},
+            'sit_ups': {'reps': (15, 35), 'form': (7.0, 9.2), 'duration': (45, 120)},
+            'pull_ups': {'reps': (3, 12), 'form': (7.5, 9.5), 'duration': (20, 60)},
+        }
+        
+        exercise_data = base_data.get(self.exercise_type, base_data['pushup'])
+        
+        self.repetitions_count = random.randint(*exercise_data['reps'])
+        self.form_score = round(random.uniform(*exercise_data['form']), 1)
+        self.duration = round(random.uniform(*exercise_data['duration']), 1)
+        
+        # Calculate calories based on duration and exercise intensity
+        intensity_multiplier = {
+            'pushup': 0.15, 'squat': 0.12, 'plank': 0.08, 'jumping_jacks': 0.18,
+            'burpees': 0.25, 'lunges': 0.14, 'mountain_climbers': 0.20,
+            'high_knees': 0.16, 'sit_ups': 0.10, 'pull_ups': 0.18
+        }
+        
+        multiplier = intensity_multiplier.get(self.exercise_type, 0.15)
+        self.calories_burned = round(self.duration * multiplier, 1)
+        self.is_analyzed = True
+        self.save()
+
 class AgeBenchmark(models.Model):
     """Age and gender specific performance benchmarks"""
     fitness_test = models.ForeignKey(FitnessTest, on_delete=models.CASCADE)
